@@ -26,6 +26,7 @@ import (
 type GlobalConfig struct {
 	Email               string                      `json:"email,omitempty"`
 	SelectedWorkspaceID string                      `json:"selected_workspace_id,omitempty"`
+	SelectedProjectID   string                      `json:"selected_project_id,omitempty"`
 	Workspaces          map[string]WorkspaceCacheEntry `json:"workspaces,omitempty"`
 	PasswordHash        string                      `json:"password_hash,omitempty"` // Added for local password verification
 	StorageMode         int                         `json:"storage_mode,omitempty"` // 1 = keychain (default), 2 = env_file
@@ -328,6 +329,25 @@ func SetSelectedWorkspaceID(id string) error {
 		c = &GlobalConfig{}
 	}
 	c.SelectedWorkspaceID = id
+	return SaveGlobalConfig(c)
+}
+
+// GetSelectedProjectID returns the globally selected project ID.
+func GetSelectedProjectID() string {
+	config, err := LoadGlobalConfig()
+	if err != nil {
+		return ""
+	}
+	return config.SelectedProjectID
+}
+
+// SetSelectedProjectID sets the globally selected project ID.
+func SetSelectedProjectID(id string) error {
+	c, _ := LoadGlobalConfig()
+	if c == nil {
+		c = &GlobalConfig{}
+	}
+	c.SelectedProjectID = id
 	return SaveGlobalConfig(c)
 }
 
