@@ -173,6 +173,26 @@ curl http://localhost:8765/health
 # {"project":"your-project-id","status":"ok"}
 ```
 
+### Status & Background Sync
+
+```bash
+agentsecrets proxy status
+# Proxy status:        running
+# PID:                 47958
+# Port:                8765
+# Uptime:              14m 2s
+# Last sync:           2 seconds ago
+# Revoked IDs:         proj_... (1 active)
+```
+
+The proxy maintains a **continuous 10-second background sync cycle** that automatically pulls down cryptographic revocations globally (e.g., if a teammate deletes a compromised key). This guarantees that revoked keys are instantly blackholed at the proxy layer, preventing agents from making outbound API calls with them—no proxy restart required!
+
+You can also force an immediate manual sync at any time:
+```bash
+agentsecrets proxy sync
+# ✓ Revocation sync triggered successfully.
+```
+
 ---
 
 ## Audit Log

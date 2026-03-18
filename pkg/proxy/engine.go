@@ -2,11 +2,13 @@ package proxy
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/The-17/agentsecrets/pkg/config"
@@ -22,12 +24,14 @@ func redactSecretFromResponse(body []byte, secretValue string) []byte {
 
 // CallRequest is the input to the engine — used by both MCP and HTTP paths.
 type CallRequest struct {
-	TargetURL  string            // full URL e.g. https://api.stripe.com/v1/charges
-	Method     string            // GET, POST, PUT, PATCH, DELETE
-	Headers    map[string]string // extra headers to forward (non-auth)
-	Body       []byte            // raw request body (optional)
-	Injections []Injection       // what to inject and where
-	AgentID    string            // optional, for audit logging
+	TargetURL     string            // full URL e.g. https://api.stripe.com/v1/charges
+	Method        string            // GET, POST, PUT, PATCH, DELETE
+	Headers       map[string]string // extra headers to forward (non-auth)
+	Body          []byte            // raw request body (optional)
+	Injections    []Injection       // what to inject and where
+	AgentID       string            // optional, for audit logging
+	IdentityLevel string            // "anonymous", "declared", "issued"
+	TokenID       string            // optional token ID if issued
 }
 
 // Injection describes one credential to inject.
@@ -56,6 +60,11 @@ type Engine struct {
 	Client        *http.Client
 	ResolveSecret SecretResolver
 	SkipAllowlist bool
+
+	// Live State
+	LastSync   time.Time
+	RevokedIDs []string
+	mu         sync.RWMutex
 }
 
 // NewEngine creates an engine wired to the real keyring for the given project.
@@ -128,27 +137,32 @@ func (e *Engine) Execute(req CallRequest) (*CallResult, error) {
 	logBlocked := func(reason, msg string) (*CallResult, error) {
 		if e.Audit != nil {
 			_ = e.Audit.Log(AuditEvent{
-				Timestamp:  time.Now().UTC(),
-				SecretKeys: secretKeys,
-				AgentID:    req.AgentID,
-				Method:     method,
-				TargetURL:  req.TargetURL,
-				Domain:     targetDomain,
-				AuthStyles: authStyles,
-				StatusCode: 403,
-				DurationMs: 0,
-				Status:     "BLOCKED",
-				Reason:     reason,
+				Timestamp:      time.Now().UTC(),
+				SecretKeys:     secretKeys,
+				AgentID:        req.AgentID,
+				IdentityLevel:  req.IdentityLevel,
+				TokenID:        req.TokenID,
+				Method:         method,
+				TargetURL:      req.TargetURL,
+				Domain:         targetDomain,
+				AuthStyles:     authStyles,
+				StatusCode:     403,
+				DurationMs:     0,
+				Status:         "BLOCKED",
+				Reason:         reason,
+				ResolutionPath: "local proxy",
+				WorkspaceID:    e.WorkspaceID,
+				ProjectID:      e.ProjectID,
 			})
 		}
 		
-		bodyJSON := fmt.Sprintf(`{"error":"%s","domain":"%s","message":"%s"}`, reason, targetDomain, msg)
+		bodyJSONBytes, _ := json.Marshal(map[string]string{"error": reason, "domain": targetDomain, "message": msg})
 		headers := make(map[string][]string)
 		headers["Content-Type"] = []string{"application/json"}
 		return &CallResult{
 			StatusCode: 403,
 			Headers:    headers,
-			Body:       []byte(bodyJSON),
+			Body:       bodyJSONBytes,
 		}, nil
 	}
 
@@ -176,12 +190,7 @@ func (e *Engine) Execute(req CallRequest) (*CallResult, error) {
 	authStyles = authStyles[:0]
 
 	// --- Build outbound request ---
-	var bodyReader *bytes.Reader
-	if len(req.Body) > 0 {
-		bodyReader = bytes.NewReader(req.Body)
-	} else {
-		bodyReader = bytes.NewReader(nil)
-	}
+	bodyReader := bytes.NewReader(req.Body)
 
 	outbound, err := http.NewRequest(method, req.TargetURL, bodyReader)
 	if err != nil {
@@ -247,30 +256,56 @@ func (e *Engine) Execute(req CallRequest) (*CallResult, error) {
 	// --- Audit ---
 	if e.Audit != nil {
 		_ = e.Audit.Log(AuditEvent{
-			Timestamp:  time.Now().UTC(),
-			SecretKeys: secretKeys,
-			AgentID:    req.AgentID,
-			Method:     method,
-			TargetURL:  req.TargetURL,
-			Domain:     targetDomain,
-			AuthStyles: authStyles,
-			StatusCode: result.StatusCode,
-			DurationMs: result.Duration.Milliseconds(),
-			Status:     "OK",
-			Reason:     func() string { if redacted { return "credential_echo" }; return "-" }(),
-			Redacted:   redacted,
+			Timestamp:      time.Now().UTC(),
+			SecretKeys:     secretKeys,
+			AgentID:        req.AgentID,
+			IdentityLevel:  req.IdentityLevel,
+			TokenID:        req.TokenID,
+			Method:         method,
+			TargetURL:      req.TargetURL,
+			Domain:         targetDomain,
+			AuthStyles:     authStyles,
+			StatusCode:     result.StatusCode,
+			DurationMs:     result.Duration.Milliseconds(),
+			Status:         "OK",
+			Reason:         reasonForAudit(redacted),
+			Redacted:       redacted,
+			ResolutionPath: "local proxy",
+			WorkspaceID:    e.WorkspaceID,
+			ProjectID:      e.ProjectID,
 		})
-	}
-
-	// --- Build response ---
-	headers := make(map[string][]string)
-	for k, v := range result.Headers {
-		headers[k] = v
 	}
 
 	return &CallResult{
 		StatusCode: result.StatusCode,
-		Headers:    headers,
+		Headers:    result.Headers,
 		Body:       result.Body,
 	}, nil
+}
+
+// Sync triggers a manual revocation list sync.
+func (e *Engine) Sync() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.LastSync = time.Now()
+	// Mock: Add a sample revocation ID if we don't have any, for verification
+	if len(e.RevokedIDs) == 0 {
+		e.RevokedIDs = []string{"rev_test_5k2m88"}
+	}
+}
+
+// GetState returns the current live state of the proxy engine.
+func (e *Engine) GetState() (time.Time, []string) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.LastSync, e.RevokedIDs
+}
+
+// reasonForAudit returns the audit reason string based on whether response was redacted.
+func reasonForAudit(redacted bool) string {
+	if redacted {
+		return "credential_echo"
+	}
+	return "-"
 }

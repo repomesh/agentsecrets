@@ -17,6 +17,7 @@ var Version = "dev"
 var (
 	authService      *auth.Service
 	workspaceService *workspaces.Service
+	apiClient        *api.Client
 )
 
 // rootCmd is the base command when called without any subcommands
@@ -46,7 +47,7 @@ func Execute() error {
 
 func init() {
 	// Create the API client with a token provider function.
-	apiClient := api.NewClient(func() string {
+	apiClient = api.NewClient(func() string {
 		return config.GetAccessToken()
 	})
 
@@ -71,6 +72,8 @@ func init() {
 	rootCmd.AddCommand(workspaceCmd)
 	rootCmd.AddCommand(projectCmd)
 	rootCmd.AddCommand(secretsCmd)
+	rootCmd.AddCommand(agentCmd)
+	rootCmd.AddCommand(logCmd)
 	rootCmd.AddCommand(proxyCmd)
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(callCmd)

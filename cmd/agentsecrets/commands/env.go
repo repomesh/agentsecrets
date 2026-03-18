@@ -125,13 +125,15 @@ func auditLog(project *config.ProjectConfig, cmdArgs []string, secretKeys []stri
 	defer audit.Close()
 
 	_ = audit.Log(proxy.AuditEvent{
-		Timestamp:  time.Now().UTC(),
-		SecretKeys: secretKeys,
-		Method:     "ENV",
-		TargetURL:  strings.Join(cmdArgs, " "),
-		AuthStyles: []string{"env_inject"},
-		StatusCode: 0,
-		Status:     "OK",
-		Reason:     "-",
+		Timestamp:   time.Now().UTC(),
+		SecretKeys:  secretKeys,
+		Method:      "ENV",
+		TargetURL:   strings.Join(cmdArgs, " "),
+		AuthStyles:  []string{"env_inject"},
+		StatusCode:  0,
+		Status:      "OK",
+		Reason:      "-",
+		WorkspaceID: project.WorkspaceID,
+		ProjectID:   project.ProjectID,
 	})
 }

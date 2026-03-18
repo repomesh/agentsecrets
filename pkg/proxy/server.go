@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
+	"time"
 )
 
 // Server is the HTTP proxy server that wraps the Engine.
@@ -26,6 +28,7 @@ func NewServer(port int, engine *Engine) *Server {
 	}
 	s.mux.HandleFunc("/proxy", s.handleProxy)
 	s.mux.HandleFunc("/health", s.handleHealth)
+	s.mux.HandleFunc("/sync", s.handleSync)
 	return s
 }
 
@@ -37,11 +40,28 @@ func (s *Server) Start() error {
 
 // handleHealth is a simple health check endpoint.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	lastSync, revoked := s.Engine.GetState()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":        "ok",
+		"project":       s.Engine.ProjectID,
+		"last_sync":      lastSync.Format(time.RFC3339),
+		"revoked_count": len(revoked),
+		"revoked_ids":   revoked,
+	})
+}
+
+// handleSync forces an immediate revocation list sync.
+func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
+	s.Engine.Sync()
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":  "ok",
-		"project": s.Engine.ProjectID,
+		"message": "revocation sync triggered",
 	})
 }
 
@@ -74,6 +94,23 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	agentID := r.Header.Get("X-AS-Agent-ID")
+	agentToken := r.Header.Get("X-AS-Agent-Token")
+
+	if agentToken == "" {
+		agentToken = os.Getenv("AS_AGENT_TOKEN")
+	}
+
+	identityLevel := "anonymous"
+	tokenID := ""
+	if agentToken != "" {
+		identityLevel = "issued"
+		tokenID = agentToken // or parsed token if identifiable
+		// If the token matches the environment token, that's what we use.
+		// For now, the backend will validate it; we just pass it along.
+		// If agentID is empty, backend will infer it from token.
+	} else if agentID != "" {
+		identityLevel = "declared"
+	}
 
 	// Parse injection headers
 	injections := parseInjections(r.Header)
@@ -94,21 +131,24 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build extra headers (everything that's not X-AS-*)
+	// Go's http.Header canonicalizes keys to "X-As-..." form
 	headers := make(map[string]string)
 	for k, v := range r.Header {
-		if !strings.HasPrefix(k, "X-As-") && !strings.HasPrefix(k, "X-AS-") {
+		if !strings.HasPrefix(k, "X-As-") {
 			headers[k] = v[0]
 		}
 	}
 
 	// Execute through engine
 	result, err := s.Engine.Execute(CallRequest{
-		TargetURL:  targetURL,
-		Method:     method,
-		Headers:    headers,
-		Body:       body,
-		Injections: injections,
-		AgentID:    agentID,
+		TargetURL:     targetURL,
+		Method:        method,
+		Headers:       headers,
+		Body:          body,
+		Injections:    injections,
+		AgentID:       agentID,
+		IdentityLevel: identityLevel,
+		TokenID:       tokenID,
 	})
 
 	if err != nil {

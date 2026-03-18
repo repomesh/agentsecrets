@@ -343,7 +343,10 @@ func runWorkspacePromote(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	cfg, _ := config.LoadGlobalConfig()
+	cfg, err := config.LoadGlobalConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
 
 	if err := ui.Spinner(fmt.Sprintf("Promoting %s...", email), func() error {
 		userID, err := getMemberUserID(workspaceID, email)
@@ -373,7 +376,10 @@ func runWorkspaceDemote(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	cfg, _ := config.LoadGlobalConfig()
+	cfg, err := config.LoadGlobalConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
 
 	if err := ui.Spinner(fmt.Sprintf("Demoting %s...", email), func() error {
 		userID, err := getMemberUserID(workspaceID, email)

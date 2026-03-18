@@ -41,106 +41,102 @@ func init() {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
-	// 1. Check if already initialized
-	alreadyInitialized := config.GlobalConfigExists()
+	// Check 1: Does ~/.agentsecrets/config.json exist?
+	if !config.GlobalConfigExists() {
+		fmt.Println("Setting up AgentSecrets...")
+		
+		if err := config.InitGlobalConfig(); err != nil {
+			return fmt.Errorf("failed to initialize global config: %w", err)
+		}
 
-	if alreadyInitialized {
-		ui.Warning("AgentSecrets is already initialized.")
-
-		if !forceReinit {
-			var confirm bool
-			err := huh.NewConfirm().
-				Title("Reinitialize?").
-				Description("This will reset your config files.").
-				Affirmative("Yes").
-				Negative("No").
-				Value(&confirm).
+		// Ask for storage mode 
+		modeToSet := storageMode
+		if !cmd.Flags().Changed("storage-mode") {
+			var modeChoice string
+			err := huh.NewSelect[string]().
+				Title("How would you like secrets to be stored locally?").
+				Options(
+					huh.NewOption("1. Keychain only (recommended) — values never written to disk.\n   .env.example created with key names only.", "1"),
+					huh.NewOption("2. .env file — plaintext file, compatible with all existing tooling.", "2"),
+				).
+				Value(&modeChoice).
 				Run()
-			if err != nil || !confirm {
-				ui.Info("Keeping existing configuration.")
-				return nil
+			
+			if err == nil {
+				if modeChoice == "2" {
+					modeToSet = 2
+				} else {
+					modeToSet = 1
+				}
 			}
 		}
 
-		// Clear existing config before re-initializing
-		if err := config.ClearSession(); err != nil {
-			return fmt.Errorf("failed to clear session: %w", err)
+		if err := config.SetStorageMode(modeToSet); err != nil {
+			return fmt.Errorf("failed to set storage mode: %w", err)
 		}
-		if err := config.ClearProjectConfig(); err != nil {
-			return fmt.Errorf("failed to clear project config: %w", err)
+
+		// Create blank .env files based on storage mode footprint to ensure they exist immediately
+		secretsEnv := secrets.NewEnvManager()
+		_ = secretsEnv.Write(make(map[string]string))
+
+		_ = writeWorkflowFile()
+
+		ui.Banner("AgentSecrets")
+		fmt.Println()
+
+		var choice string
+		err := huh.NewSelect[string]().
+			Title("What would you like to do?").
+			Options(
+				huh.NewOption("Create a new account", "signup"),
+				huh.NewOption("Login to existing account", "login"),
+			).
+			Value(&choice).
+			Run()
+		if err != nil {
+			return nil
 		}
 
 		fmt.Println()
+		if choice == "signup" {
+			if err := runSignup(); err != nil {
+				return err
+			}
+		} else {
+			if err := runLoginFlow(); err != nil {
+				return err
+			}
+		}
+		
+		fmt.Println() // Spacer before project setup
 	}
 
-	// Create config directories and files
-	if err := config.InitGlobalConfig(); err != nil {
-		return fmt.Errorf("failed to initialize global config: %w", err)
+	// Check 2: Does .agentsecrets/project.json exist in the current directory or ancestors?
+	root, err := config.GetProjectRoot()
+	if err != nil {
+		return fmt.Errorf("failed to check project root: %w", err)
 	}
+
+	if root != "" {
+		fmt.Println("Project already initialised in this directory.")
+		project, err := config.LoadProjectConfig()
+		if err == nil && project != nil {
+			fmt.Printf("  Name: %s\n  ID: %s\n  Workspace: %s\n", project.ProjectName, project.ProjectID, project.WorkspaceName)
+		}
+		return nil
+	}
+
+	// Initialize project wrapper in current directory
+	fmt.Println("Initialising project wrapper in current directory...")
+	
 	if err := config.InitProjectConfig(); err != nil {
 		return fmt.Errorf("failed to initialize project config: %w", err)
 	}
+	
+	fmt.Println("  Config written to .agentsecrets/project.json")
+	fmt.Println("\nDone. Run `agentsecrets project create <name>` or `agentsecrets project use <name>` to link this folder.")
 
-	// Ask for storage mode if it wasn't explicitly passed via flag
-	modeToSet := storageMode
-	if !cmd.Flags().Changed("storage-mode") {
-		var modeChoice string
-		err := huh.NewSelect[string]().
-			Title("How would you like secrets to be stored locally?").
-			Options(
-				huh.NewOption("1. Keychain only (recommended) — values never written to disk.\n   .env.example created with key names only.", "1"),
-				huh.NewOption("2. .env file — plaintext file, compatible with all existing tooling.", "2"),
-			).
-			Value(&modeChoice).
-			Run()
-		
-		if err == nil {
-			if modeChoice == "2" {
-				modeToSet = 2
-			} else {
-				modeToSet = 1
-			}
-		}
-	}
-
-	// Set storage mode in global config.
-	if err := config.SetStorageMode(modeToSet); err != nil {
-		return fmt.Errorf("failed to set storage mode: %w", err)
-	}
-
-	// Create blank .env files based on storage mode footprint to ensure they exist immediately
-	secretsEnv := secrets.NewEnvManager()
-	_ = secretsEnv.Write(make(map[string]string))
-
-	_ = writeWorkflowFile()
-
-	ui.Banner("AgentSecrets")
-	fmt.Println()
-
-	// 2. Ask: Create account or Login
-	var choice string
-	err := huh.NewSelect[string]().
-		Title("What would you like to do?").
-		Options(
-			huh.NewOption("Create a new account", "signup"),
-			huh.NewOption("Login to existing account", "login"),
-		).
-		Value(&choice).
-		Run()
-	if err != nil {
-		return nil
-	}
-
-	fmt.Println()
-
-	switch choice {
-	case "signup":
-		return runSignup()
-	case "login":
-		return runLoginFlow()
-	default:
-		return nil
-	}
+	return nil
 }
 
 func runSignup() error {
@@ -322,6 +318,17 @@ Wait for confirmation, then verify with ` + "`" + `agentsecrets secrets list` + 
 Standard naming: SERVICE_KEY or SERVICE_TOKEN (uppercase, underscores)
 Examples: STRIPE_KEY, OPENAI_KEY, GITHUB_TOKEN, PAYSTACK_KEY, SENDGRID_KEY
 
+## AGENT IDENTITY
+
+As an AI, you can seamlessly manage your own automated execution identities and tokens:
+
+` + "```" + `bash
+agentsecrets agent list
+agentsecrets agent delete "my-agent-name"
+agentsecrets agent token issue "my-agent-name"
+agentsecrets agent token revoke "token-id" --agent="my-agent-name"
+` + "```" + `
+
 ## MAKE AUTHENTICATED API CALLS
 
 Always use ` + "`" + `agentsecrets call` + "`" + ` — never curl or direct HTTP with credentials.
@@ -370,6 +377,7 @@ For multiple calls or framework integrations:
 agentsecrets proxy start
 agentsecrets proxy start --port 9000
 agentsecrets proxy status
+agentsecrets proxy sync
 agentsecrets proxy stop
 ` + "```" + `
 
@@ -379,11 +387,20 @@ After any significant workflow:
 
 ` + "```" + `bash
 agentsecrets proxy logs
+agentsecrets proxy logs --watch
 agentsecrets proxy logs --last 20
 agentsecrets proxy logs --secret STRIPE_KEY
 ` + "```" + `
 
 You will see: timestamp, method, target URL, key name, status code, duration, and redaction status. Never values.
+
+To stream the authoritative backend global audit ledger or view statistical summaries over time:
+
+` + "```" + `bash
+agentsecrets log list --tail
+agentsecrets log export --format json
+agentsecrets log summary
+` + "```" + `
 
 If you see (REDACTED) in the logs, the proxy detected an echoed credential and scrubbed it. This is expected security behavior.
 

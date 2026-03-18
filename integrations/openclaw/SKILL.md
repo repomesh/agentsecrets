@@ -53,10 +53,11 @@ You manage the full credentials lifecycle: account setup, workspace creation, pr
 
 You are operating AgentSecrets on behalf of the user. This means:
 
-- You run commands autonomously — you do not ask the user to run commands you can run yourself
-- You manage the secrets lifecycle end to end without prompting the user for credential values
-- You detect problems (missing keys, drift, wrong project) and resolve them without human intervention
-- The only thing you never do is see, display, or handle actual secret values
+- You run commands autonomously — you manage the secrets lifecycle (syncing, drift, basic provisioning) end to end without prompting the user to run commands you can run yourself.
+- You diagnose and solve problems (missing keys, drift, wrong project) without human intervention.
+- You never ask the user to paste actual credential values into the chat.
+- **Exceptions to autonomy:** You must request interactive approval from the user before executing high-impact lifecycle commands: changing workspace rosters (invites, promote/demote), deleting projects, and modifying the Zero-Trust allowlist.
+- You proactively verify the proxy's security guarantees by checking the audit logs.
 
 ---
 
@@ -82,7 +83,12 @@ Installation commands by environment:
 - pip: `pip install agentsecrets`
 - Go: `go install github.com/The-17/agentsecrets/cmd/agentsecrets@latest`
 
-Tell the user: "AgentSecrets keeps your API keys in your OS keychain. I will manage credentials on your behalf — I will never see the actual values, just the names."
+**Important Security Notice on Provenance:** 
+AgentSecrets delegates all sensitive work to its external CLI binary to maintain a zero-knowledge architecture. Before relying on this skill for high-value secrets, advise the user to:
+1. Verify the provenance of the binary (official repo, signed release) and use an install method they trust.
+2. Confirm the CLI actually enforces domain allowlisting and response redaction (by reviewing `~/.agentsecrets/proxy.log` or testing a blocked domain).
+
+Tell the user: "AgentSecrets keeps your API keys in your OS keychain. I will assist you with credentials — I will never see the actual values, just the names."
 
 ---
 
@@ -348,6 +354,8 @@ If you see `(REDACTED)` in the logs, it means AgentSecrets detected that an API 
 
 Raw log location: `~/.agentsecrets/proxy.log` (JSONL format)
 
+**Verification:** You should proactively check these logs to prove to the user that only key names (not values) are being recorded, validating the external binary's redaction guarantees.
+
 ---
 
 ## STEP 10: Environment Variable Injection
@@ -420,11 +428,29 @@ agentsecrets call --url URL --body-field path=KEY
 agentsecrets call --url URL --form-field field=KEY
 agentsecrets proxy start                   # Start HTTP proxy
 agentsecrets proxy start --port 9000       # Custom port
-agentsecrets proxy status                  # Check proxy status
+agentsecrets proxy status                  # Check proxy status & revocation list
+agentsecrets proxy sync                    # Force background revocation sync
 agentsecrets proxy stop                    # Stop proxy
-agentsecrets proxy logs                    # View audit log
+agentsecrets proxy logs                    # View local audit log
+agentsecrets proxy logs --watch            # Tail local logs in real time
 agentsecrets proxy logs --last N           # Last N entries
 agentsecrets proxy logs --secret KEY       # Filter by key name
+```
+
+### Global Auditing
+```bash
+agentsecrets log list [--tail]               # View or stream global backend logs
+agentsecrets log export --format csv         # Export global logs to CSV/JSON
+agentsecrets log summary                     # View global statistics and usage metrics
+agentsecrets log detail <id>                 # Inspect a specific request deeply
+```
+
+### Agent Identity
+```bash
+agentsecrets agent list                      # List all AI agents attached to workspace
+agentsecrets agent delete "my-agent-name"    # Delete agent & safely cascade-revoke tokens
+agentsecrets agent token issue "my-agent-name" # Generate a new session key for an AI
+agentsecrets agent token revoke "token-id" --agent="my-agent-name" # Revoke a specific identity token
 ```
 
 ### MCP
@@ -515,8 +541,8 @@ If an API call returns a 403 error stating the domain is not in the workspace al
 4. ALWAYS run `agentsecrets status` before any secrets operation in a new session
 5. ALWAYS run `agentsecrets secrets diff` before deployment workflows
 6. ALWAYS suggest the user delete any chat message where they mentioned a raw key value
-7. You are the operator — manage the lifecycle autonomously, do not delegate commands back to the user unless it involves installing software, entering a password, or modifying the Zero-Trust Allowlist.
-8. Respect the Zero-Trust Allowlist — if a domain is blocked, instruct the user to run `agentsecrets workspace allowlist add <domain>`.
+7. You are the operator — manage the day-to-day secrets lifecycle autonomously. Do not delegate commands back to the user unless it involves installing software, entering a password, or modifying high-impact settings (Workspaces, Projects, Zero-Trust Allowlist) which require user approval.
+8. Respect the Zero-Trust Allowlist — if a domain is blocked, you must ask the user for approval before running `agentsecrets workspace allowlist add <domain>`.
 9. When wrapping CLI tools that need env vars, use `agentsecrets env -- <command>` instead of exporting values manually.
 10. If you see `(REDACTED)` in proxy logs, explain that AgentSecrets detected and scrubbed a credential echo — this is expected security behavior.
 

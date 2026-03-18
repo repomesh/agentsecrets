@@ -8,13 +8,15 @@ Every other secrets tool was built for humans to provision credentials to agents
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://go.dev/)
 [![ClawHub](https://img.shields.io/badge/ClawHub-agentsecrets-blue)](https://clawhub.ai/SteppaCodes/agentsecrets)
 
+**[Official Website](https://agentsecrets.theseventeen.co)** | **[Engineering Blog Series](https://engineering.theseventeen.co/series/building-agentsecrets)**
+
 ---
 
 ## What This Is
 
-Most secrets tools treat AI agents as consumers — something that receives a credential and uses it. AgentSecrets treats the agent as an operator.
+Most secrets tools treat AI agents as consumers, something that receives a credential and uses it. AgentSecrets treats the agent as an operator.
 
-Your agent checks its own status. Notices a secret is out of sync. Pulls the latest from the cloud. Makes the authenticated API call. Audits what it did. All of this without ever knowing a single credential value.
+Your agent checks its own status, notices a secret is out of sync, pulls the latest from the cloud, makes the authenticated API call, and audits what it did. All of this without ever knowing a single credential value.
 
 ```bash
 # An AI agent managing its own secrets workflow autonomously
@@ -89,7 +91,7 @@ go install github.com/The-17/agentsecrets/cmd/agentsecrets@latest
 ## Quick Start
 
 ```bash
-# Create account + encryption keys
+# Set up your account (first time) or initialise a new project (returning user)
 agentsecrets init
 
 # Create a project
@@ -383,7 +385,7 @@ response = as_client.call(
 You pass a key name. The SDK resolves from the OS keychain, injects at the transport layer, and returns only the API response. Every user of every tool built on the SDK gets zero-knowledge credential management automatically — without knowing AgentSecrets exists.
 
 **Built on the SDK:**
-- [AgentSecrets MCP Server Template](https://github.com/The-17/agentsecrets-mcp-template) — scaffold for building MCP servers with zero credential storage *(coming soon)*
+- [Zero-Knowledge MCP Server Template](https://github.com/The-17/zero-knowledge-mcp) — scaffold for building MCP servers with zero credential storage
 - [AgentSecrets for LangChain](https://github.com/The-17/agentsecrets-langchain) — zero-knowledge API calls in any LangChain agent *(coming soon)*
 
 ---
@@ -392,7 +394,7 @@ You pass a key name. The SDK resolves from the OS keychain, injects at the trans
 
 ### Account
 ```bash
-agentsecrets init                    # Create account or login
+agentsecrets init                    # Set up account or initialise a new project
 agentsecrets login                   # Login to existing account
 agentsecrets logout                  # Clear session
 agentsecrets status                  # Current user, workspace, project, last sync
@@ -400,10 +402,10 @@ agentsecrets status                  # Current user, workspace, project, last sy
 
 ### Workspaces
 ```bash
-agentsecrets workspace create "Name"       # Create workspace
-agentsecrets workspace list                # List workspaces
-agentsecrets workspace switch "Name"       # Switch active workspace
-agentsecrets workspace invite user@email   # Invite teammate
+agentsecrets workspace create "The Seventeen"       # Create workspace
+agentsecrets workspace list                         # List workspaces
+agentsecrets workspace switch "The Seventeen"       # Switch active workspace
+agentsecrets workspace invite [EMAIL_ADDRESS]            # Invite teammate
 ```
 
 ### Projects
@@ -418,7 +420,7 @@ agentsecrets project delete my-app        # Delete project
 ### Secrets
 ```bash
 agentsecrets secrets set KEY=value        # Store a secret
-agentsecrets secrets get KEY              # Retrieve a value (you see it, agent doesn't)
+agentsecrets secrets get KEY              # Retrieve a value
 agentsecrets secrets list                 # List key names — never values
 agentsecrets secrets push                 # Upload .env to cloud (encrypted)
 agentsecrets secrets pull                 # Download cloud secrets to keychain
@@ -430,11 +432,29 @@ agentsecrets secrets diff                 # Compare local vs cloud
 ```bash
 agentsecrets call --url <URL> --bearer KEY    # One-shot authenticated call
 agentsecrets proxy start [--port 8765]        # Start HTTP proxy
-agentsecrets proxy status                     # Check proxy status
-agentsecrets proxy logs [--last N]            # View audit log
+agentsecrets proxy status                     # Check proxy status & revocation list
+agentsecrets proxy sync                       # Force background revocation sync
+agentsecrets proxy logs [--last N] [--watch]  # View or tail local audit trail
 agentsecrets exec                             # OpenClaw exec provider (reads stdin)
 agentsecrets mcp serve                        # Start MCP server
 agentsecrets mcp install                      # Auto-configure AI tools
+```
+
+### Logging & Audit
+```bash
+agentsecrets log list [--tail]               # View or stream global backend logs
+agentsecrets log export --format csv         # Export global logs to CSV/JSON
+agentsecrets log summary                     # View global statistics and usage metrics
+agentsecrets log detail <id>                 # Inspect a specific request deeply
+```
+
+### Agent Identity
+```bash
+agentsecrets agent list                      # List AI agents attached to workspace
+agentsecrets agent delete <name>             # Delete agent & safely cascade-revoke tokens
+agentsecrets agent token issue <name>        # Generate a new session key for an AI
+agentsecrets agent token list <name>         # See all active tokens for an agent
+agentsecrets agent token revoke <id> --agent="<name>" # Revoke a specific identity token
 ```
 
 ### Environment Injection
@@ -548,7 +568,9 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md) and [PROXY.md](docs/PROXY.md) for de
 - [x] Workspace role management (promote/demote)
 - [x] `agentsecrets env` — environment variable injection
 - [x] Python SDK (`pip install agentsecrets`)
-- [ ] AgentSecrets MCP Server Template
+- [x] Zero-Knowledge MCP Server Template
+- [x] Agent identity + token management
+- [x] Governance audit log
 - [ ] AgentSecrets for LangChain
 - [ ] AgentSecrets for CrewAI
 - [ ] Secret rotation
@@ -584,6 +606,8 @@ make test
 
 ## Links
 
+- **Website**: [agentsecrets.theseventeen.co](https://agentsecrets.theseventeen.co)
+- **Deep Dive**: [Building AgentSecrets (Engineering Blog)](https://engineering.theseventeen.co/series/building-agentsecrets)
 - **GitHub**: [github.com/The-17/agentsecrets](https://github.com/The-17/agentsecrets)
 - **SDK**: [github.com/The-17/agentsecrets-sdk](https://github.com/The-17/agentsecrets-sdk)
 - **ClawHub**: [clawhub.ai/SteppaCodes/agentsecrets](https://clawhub.ai/SteppaCodes/agentsecrets)

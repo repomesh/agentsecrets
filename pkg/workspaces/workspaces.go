@@ -187,11 +187,11 @@ func (s *Service) Members(workspaceID string) ([]WorkspaceMember, error) {
 	return res.Data, nil
 }
 
-// RemoveMember removes a member from a workspace.
-func (s *Service) RemoveMember(workspaceID, email string) error {
+// RemoveMember removes a member from a workspace by their user ID.
+func (s *Service) RemoveMember(workspaceID, userID string) error {
 	resp, err := s.API.Call("workspaces.remove_member", "DELETE", nil, map[string]string{
 		"workspace_id": workspaceID,
-		"email":        email,
+		"user_id":      userID,
 	})
 	if err != nil {
 		return fmt.Errorf("remove member: API call failed: %w", err)

@@ -216,6 +216,23 @@ agentsecrets secrets delete KEY
 agentsecrets secrets diff
 ```
 
+### Logging & Audit
+```bash
+agentsecrets log list [--tail]
+agentsecrets log export --format csv
+agentsecrets log summary
+agentsecrets log detail <id>
+```
+
+### Agent Identity
+```bash
+agentsecrets agent list
+agentsecrets agent delete <name>
+agentsecrets agent token issue <name>
+agentsecrets agent token list <name>
+agentsecrets agent token revoke <id> --agent="<name>"
+```
+
 ### Proxy and Calls
 ```bash
 agentsecrets call --url URL --bearer KEY
@@ -227,8 +244,9 @@ agentsecrets call --url URL --body-field path=KEY
 agentsecrets call --url URL --form-field field=KEY
 agentsecrets proxy start [--port 8765]
 agentsecrets proxy status
+agentsecrets proxy sync
 agentsecrets proxy stop
-agentsecrets proxy logs [--last N] [--secret KEY]
+agentsecrets proxy logs [--last N] [--watch] [--secret KEY]
 agentsecrets exec
 agentsecrets mcp serve
 agentsecrets mcp install
@@ -304,6 +322,8 @@ agentsecrets env -- node server.js
 
 ## Links
 
+- Website: https://agentsecrets.theseventeen.co
+- Deep Dive Series: https://engineering.theseventeen.co/series/building-agentsecrets
 - GitHub: https://github.com/The-17/agentsecrets
 - ClawHub: https://clawhub.ai/SteppaCodes/agentsecrets
 - Security issues: hello@theseventeen.co (do not open public issues)

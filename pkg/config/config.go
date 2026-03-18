@@ -185,9 +185,42 @@ func SaveTokens(tokens *TokenConfig) error {
 	return writeJSON(paths.TokenFile, tokens, 0600)
 }
 
-// LoadProjectConfig reads .agentsecrets/project.json from the current directory.
+// GetProjectRoot walks up the directory tree from the current working directory.
+// It returns the absolute or relative path to the nearest directory containing
+// '.agentsecrets/project.json'.
+// If none is found before reaching the filesystem root, it returns an empty string.
+func GetProjectRoot() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	for {
+		projectFile := filepath.Join(dir, ".agentsecrets", "project.json")
+		if _, err := os.Stat(projectFile); err == nil {
+			return dir, nil
+		}
+
+		parentDir := filepath.Dir(dir)
+		// If we've reached the root directory (or if Dir() returns the same dir)
+		if parentDir == dir || parentDir == "" || parentDir == string(filepath.Separator) {
+			return "", nil
+		}
+		dir = parentDir
+	}
+}
+
+// LoadProjectConfig reads .agentsecrets/project.json from the nearest project root.
 func LoadProjectConfig() (*ProjectConfig, error) {
-	projectFile := filepath.Join(".", ".agentsecrets", "project.json")
+	root, err := GetProjectRoot()
+	if err != nil {
+		return nil, err
+	}
+	if root == "" {
+		return nil, fmt.Errorf("no AgentSecrets project found in this directory or any parent directory.\nRun `agentsecrets init` from your project root to initialise a project")
+	}
+
+	projectFile := filepath.Join(root, ".agentsecrets", "project.json")
 	var config ProjectConfig
 	if err := readJSON(projectFile, &config); err != nil {
 		return nil, err
@@ -195,9 +228,18 @@ func LoadProjectConfig() (*ProjectConfig, error) {
 	return &config, nil
 }
 
-// SaveProjectConfig writes .agentsecrets/project.json in the current directory.
+// SaveProjectConfig writes .agentsecrets/project.json to the nearest project root.
 func SaveProjectConfig(config *ProjectConfig) error {
-	projectFile := filepath.Join(".", ".agentsecrets", "project.json")
+	root, err := GetProjectRoot()
+	if err != nil {
+		return err
+	}
+	// If root is empty (e.g., initial project creation), write to current directory
+	if root == "" {
+		root = "."
+	}
+
+	projectFile := filepath.Join(root, ".agentsecrets", "project.json")
 	return writeJSON(projectFile, config, 0644)
 }
 
@@ -370,8 +412,12 @@ func ClearSession() error {
 
 // ClearProjectConfig resets the local .agentsecrets/project.json file.
 func ClearProjectConfig() error {
-	projectDir := filepath.Join(".", ".agentsecrets")
-	projectFile := filepath.Join(projectDir, "project.json")
+	root, _ := GetProjectRoot()
+	if root == "" {
+		return nil // nothing to clear
+	}
+
+	projectFile := filepath.Join(root, ".agentsecrets", "project.json")
 	
 	// Check if it exists first
 	if _, err := os.Stat(projectFile); os.IsNotExist(err) {

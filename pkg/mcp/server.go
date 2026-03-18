@@ -139,8 +139,9 @@ func handleAPICall(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolR
 		Method:     method,
 		Headers:    headers,
 		Body:       body,
-		Injections: injections,
-		AgentID:    "mcp",
+		Injections:    injections,
+		AgentID:       "mcp",
+		IdentityLevel: "issued",
 	})
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("API call failed: %v", err)), nil

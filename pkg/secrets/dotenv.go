@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -16,11 +17,15 @@ type EnvManager struct {
 	EnvExamplePath string
 }
 
-// NewEnvManager creates a manager for the current directory.
+// NewEnvManager creates a manager for the current project.
 func NewEnvManager() *EnvManager {
+	root, _ := config.GetProjectRoot()
+	if root == "" {
+		root = "."
+	}
 	return &EnvManager{
-		EnvPath:        ".env",
-		EnvExamplePath: ".env.example",
+		EnvPath:        filepath.Join(root, ".env"),
+		EnvExamplePath: filepath.Join(root, ".env.example"),
 	}
 }
 

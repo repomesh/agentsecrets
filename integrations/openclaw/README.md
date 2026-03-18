@@ -67,6 +67,8 @@ clawhub publish integrations/openclaw
 
 ## Links
 
+- [Official Website](https://agentsecrets.theseventeen.co)
+- [Building AgentSecrets (Engineering Blog)](https://engineering.theseventeen.co/series/building-agentsecrets)
 - [AgentSecrets GitHub](https://github.com/The-17/agentsecrets)
 - [Security Docs](https://github.com/The-17/agentsecrets/blob/main/docs/PROXY.md)
 - [The Seventeen](https://github.com/The-17)

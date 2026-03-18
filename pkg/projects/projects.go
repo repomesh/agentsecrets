@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/The-17/agentsecrets/pkg/api"
 	"github.com/The-17/agentsecrets/pkg/config"
@@ -146,7 +147,11 @@ func (s *Service) Use(name string) (*Project, error) {
 
 // bindLocally updates the fields in the existing .agentsecrets/project.json
 func (s *Service) bindLocally(project *Project) error {
-	projectDir := ".agentsecrets"
+	root, _ := config.GetProjectRoot()
+	if root == "" {
+		root = "."
+	}
+	projectDir := filepath.Join(root, ".agentsecrets")
 	if err := os.MkdirAll(projectDir, 0755); err != nil {
 		return fmt.Errorf("failed to create projects directory: %w", err)
 	}
@@ -242,7 +247,10 @@ func (s *Service) Delete(name string) error {
 	// Unbind local project info if we just deleted the active one
 	local, err := config.LoadProjectConfig()
 	if err == nil && local != nil && local.ProjectName == name && local.WorkspaceID == workspaceID {
-		os.Remove(".agentsecrets/project.json")
+		root, _ := config.GetProjectRoot()
+		if root != "" {
+			os.Remove(filepath.Join(root, ".agentsecrets", "project.json"))
+		}
 	}
 
 	return nil

@@ -110,8 +110,7 @@ func runSecretsSet(cmd *cobra.Command, args []string) error {
 	if err := ui.Spinner(fmt.Sprintf("Encrypting and syncing %d secrets...", len(kv)), func() error {
 		return secretsService.BatchSet(kv)
 	}); err != nil {
-		ui.Error(fmt.Sprintf("Failed to set secrets: %v", err))
-		return nil
+		return fmt.Errorf("failed to set secrets: %w", err)
 	}
 
 	for k := range kv {
@@ -386,7 +385,7 @@ func runSecretsDiff(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\n%s\n", ui.BannerStr("Secret Diff"))
 
 	allowlistDrift := false
-    // Calculate remote only allowlist drift
+	// Calculate remote only allowlist drift
 	var remoteOnlyAllowlist []string
 	for _, r := range allowlistRemote {
 		found := false
@@ -459,8 +458,8 @@ func runSecretsDiff(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 		fmt.Printf("Run %s to sync both.\n\n", ui.BrandStyle.Render("agentsecrets secrets pull"))
 	} else if len(diff.Added) > 0 || len(diff.Removed) > 0 || len(diff.Changed) > 0 {
-        fmt.Printf("Run %s to sync both.\n\n", ui.BrandStyle.Render("agentsecrets secrets pull"))
-    }
+		fmt.Printf("Run %s to sync both.\n\n", ui.BrandStyle.Render("agentsecrets secrets pull"))
+	}
 
 	return nil
 }

@@ -8,6 +8,8 @@ Every other secrets tool was built for humans to provision credentials to agents
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://go.dev/)
 [![ClawHub](https://img.shields.io/badge/ClawHub-agentsecrets-blue)](https://clawhub.ai/SteppaCodes/agentsecrets)
 
+**[Official Website](https://agentsecrets.theseventeen.co)** | **[Engineering Blog Series](https://engineering.theseventeen.co/series/building-agentsecrets)**
+
 ---
 
 > **Package rename notice**
@@ -435,11 +437,29 @@ agentsecrets secrets diff                 # Compare local vs cloud
 ```bash
 agentsecrets call --url <URL> --bearer KEY    # One-shot authenticated call
 agentsecrets proxy start [--port 8765]        # Start HTTP proxy
-agentsecrets proxy status                     # Check proxy status
-agentsecrets proxy logs [--last N]            # View audit log
+agentsecrets proxy status                     # Check proxy status & revocation list
+agentsecrets proxy sync                       # Force background revocation sync
+agentsecrets proxy logs [--last N] [--watch]  # View or stream local audit trail
 agentsecrets exec                             # OpenClaw exec provider (reads stdin)
 agentsecrets mcp serve                        # Start MCP server
 agentsecrets mcp install                      # Auto-configure AI tools
+```
+
+### Logging & Audit
+```bash
+agentsecrets log list [--tail]               # View or stream global backend logs
+agentsecrets log export --format csv         # Export global logs to CSV/JSON
+agentsecrets log summary                     # View global statistics and usage metrics
+agentsecrets log detail <id>                 # Inspect a specific request deeply
+```
+
+### Agent Identity
+```bash
+agentsecrets agent list                      # List AI agents attached to workspace
+agentsecrets agent delete <name>             # Delete agent & safely cascade-revoke tokens
+agentsecrets agent token issue <name>        # Generate a new session key for an AI
+agentsecrets agent token list <name>         # See all active tokens for an agent
+agentsecrets agent token revoke <id> --agent="<name>" # Revoke a specific identity token
 ```
 
 ### Environment Injection
@@ -589,6 +609,8 @@ make test
 
 ## Links
 
+- **Website**: [agentsecrets.theseventeen.co](https://agentsecrets.theseventeen.co)
+- **Deep Dive**: [Building AgentSecrets (Engineering Blog)](https://engineering.theseventeen.co/series/building-agentsecrets)
 - **GitHub**: [github.com/The-17/agentsecrets](https://github.com/The-17/agentsecrets)
 - **SDK**: [github.com/The-17/agentsecrets-sdk](https://github.com/The-17/agentsecrets-sdk)
 - **ClawHub**: [clawhub.ai/SteppaCodes/agentsecrets](https://clawhub.ai/SteppaCodes/agentsecrets)

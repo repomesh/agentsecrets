@@ -8,7 +8,6 @@ import (
 
 	"github.com/The-17/agentsecrets/pkg/config"
 	"github.com/The-17/agentsecrets/pkg/proxy"
-	"github.com/The-17/agentsecrets/pkg/ui"
 )
 
 var (
@@ -124,8 +123,7 @@ func runCall(cmd *cobra.Command, args []string) error {
 	// Load project config
 	project, err := config.LoadProjectConfig()
 	if err != nil || project.ProjectID == "" {
-		ui.Error("No project configured — run 'agentsecrets init' first")
-		return nil
+		return fmt.Errorf("no project configured — run 'agentsecrets init' first")
 	}
 
 	// Create engine and execute
