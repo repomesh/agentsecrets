@@ -29,9 +29,9 @@ var endpointMap = map[string]map[string]string{
 	"secrets": {
 		"list":   "secrets/{project_id}/",
 		"create": "secrets/",
-		"get":    "secrets/{project_id}/{key}/",
-		"update": "secrets/{project_id}/{key}/",
-		"delete": "secrets/{project_id}/{key}/",
+		"get":    "secrets/{project_id}/{environment}/{key}/",
+		"update": "secrets/{project_id}/{environment}/{key}/",
+		"delete": "secrets/{project_id}/{environment}/{key}/",
 	},
 	"projects": {
 		"list":   "projects/",
@@ -108,14 +108,8 @@ func NewClient(tokenFunc func() string) *Client {
 // method is the HTTP method (GET, POST, PUT, DELETE).
 // data is the request body (will be JSON-encoded), can be nil.
 // urlParams are substituted into the endpoint path template.
-//
-// Example:
-//
-//	resp, err := client.Call("secrets.get", "GET", nil, map[string]string{
-//	    "project_id": "uuid-here",
-//	    "key":        "DATABASE_URL",
-//	})
-func (c *Client) Call(endpointKey, method string, data interface{}, urlParams map[string]string) (*http.Response, error) {
+// queryParams are added as ?key=value to the URL.
+func (c *Client) Call(endpointKey, method string, data interface{}, urlParams map[string]string, queryParams map[string]string) (*http.Response, error) {
 	// Resolve the endpoint path
 	path, err := c.resolveEndpoint(endpointKey, urlParams)
 	if err != nil {
@@ -123,6 +117,19 @@ func (c *Client) Call(endpointKey, method string, data interface{}, urlParams ma
 	}
 
 	url := fmt.Sprintf("%s/%s", c.BaseURL, path)
+
+	// Add query parameters if any
+	if len(queryParams) > 0 {
+		var q []string
+		for k, v := range queryParams {
+			if v != "" {
+				q = append(q, fmt.Sprintf("%s=%s", k, v))
+			}
+		}
+		if len(q) > 0 {
+			url = fmt.Sprintf("%s?%s", url, strings.Join(q, "&"))
+		}
+	}
 
 	// Build request body
 	var body io.Reader

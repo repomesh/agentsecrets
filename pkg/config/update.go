@@ -1,0 +1,112 @@
+package config
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+)
+
+// GitHubRelease represents the structure of a GitHub release from the API
+type GitHubRelease struct {
+	TagName string `json:"tag_name"`
+}
+
+// CheckResult represents the outcome of an update check
+type CheckResult struct {
+	NewVersionAvailable bool
+	LatestVersion       string
+	CurrentVersion      string
+}
+
+// CheckForUpdates checks GitHub for a newer version of the CLI.
+// It only performs the check if more than 24 hours have passed since the last one.
+// Returns a CheckResult if a newer version is found, or nil if no check was performed or no update was found.
+func CheckForUpdates(currentVersion string) (*CheckResult, error) {
+	if currentVersion == "dev" {
+		return nil, nil // Don't check for dev builds
+	}
+
+	cfg, err := LoadGlobalConfig()
+	if err != nil {
+		return nil, nil // Silently fail if config can't be loaded
+	}
+
+	now := time.Now().Unix()
+	const oneDay = 24 * 60 * 60
+
+	// If we checked recently, just return nil (no check performed)
+	if now-cfg.LastUpdateCheck < oneDay {
+		// If we already have a cached latest version that's newer than current, return it
+		if cfg.LatestVersion != "" && isNewer(cfg.LatestVersion, currentVersion) {
+			return &CheckResult{
+				NewVersionAvailable: true,
+				LatestVersion:       cfg.LatestVersion,
+				CurrentVersion:      currentVersion,
+			}, nil
+		}
+		return nil, nil
+	}
+
+	// Perform the check
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("https://api.github.com/repos/The-17/agentsecrets/releases/latest")
+	if err != nil {
+		return nil, fmt.Errorf("failed to check for updates: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github api returned status: %d", resp.StatusCode)
+	}
+
+	var release GitHubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return nil, fmt.Errorf("failed to decode github response: %w", err)
+	}
+
+	latest := strings.TrimPrefix(release.TagName, "v")
+	
+	// Update cache
+	cfg.LastUpdateCheck = now
+	cfg.LatestVersion = latest
+	_ = SaveGlobalConfig(cfg) // Best effort save
+
+	if isNewer(latest, currentVersion) {
+		return &CheckResult{
+			NewVersionAvailable: true,
+			LatestVersion:       latest,
+			CurrentVersion:      currentVersion,
+		}, nil
+	}
+
+	return nil, nil
+}
+
+// isNewer is a simple semantic version comparator. 
+// Assumes standard semver (e.g., 1.1.2)
+func isNewer(latest, current string) bool {
+	if latest == current {
+		return false
+	}
+	
+	lParts := strings.Split(latest, ".")
+	cParts := strings.Split(current, ".")
+	
+	for i := 0; i < len(lParts) && i < len(cParts); i++ {
+		var l, c int
+		fmt.Sscanf(lParts[i], "%d", &l)
+		fmt.Sscanf(cParts[i], "%d", &c)
+		
+		if l > c {
+			return true
+		}
+		if l < c {
+			return false
+		}
+	}
+	
+	// If prefixes are same, the one with more parts is "newer" (e.g. 1.1.2.1 > 1.1.2)
+	return len(lParts) > len(cParts)
+}

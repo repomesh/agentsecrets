@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -38,6 +37,11 @@ var agentRegisterCmd = &cobra.Command{
 		projectID, _ := cmd.Flags().GetString("project")
 		label, _ := cmd.Flags().GetString("label")
 		expires, _ := cmd.Flags().GetString("expires")
+		environment, _ := cmd.Flags().GetString("env")
+
+		if environment == "" {
+			environment = config.ResolveEnvironment()
+		}
 
 		workspaceID := config.GetSelectedWorkspaceID()
 		if workspaceID == "" {
@@ -48,6 +52,7 @@ var agentRegisterCmd = &cobra.Command{
 			Name:        name,
 			WorkspaceID: workspaceID,
 			ProjectID:   projectID,
+			Environment: environment,
 			Label:       label,
 			ExpiresIn:   expires,
 		})
@@ -126,6 +131,11 @@ var agentTokenIssueCmd = &cobra.Command{
 		name := args[0]
 		label, _ := cmd.Flags().GetString("label")
 		expires, _ := cmd.Flags().GetString("expires")
+		environment, _ := cmd.Flags().GetString("env")
+
+		if environment == "" {
+			environment = config.ResolveEnvironment()
+		}
 
 		workspaceID := config.GetSelectedWorkspaceID()
 		if workspaceID == "" {
@@ -138,8 +148,9 @@ var agentTokenIssueCmd = &cobra.Command{
 		}
 
 		resp, err := agentService.TokenIssue(workspaceID, agent.ID, agents.IssueTokenRequest{
-			Label:     label,
-			ExpiresIn: expires,
+			Environment: environment,
+			Label:       label,
+			ExpiresIn:   expires,
 		})
 		if err != nil {
 			return fmt.Errorf("token issuance failed: %w", err)
@@ -233,7 +244,7 @@ var agentTokenRevokeCmd = &cobra.Command{
 				fmt.Scanln(&response)
 				if response != "y" && response != "Y" {
 					fmt.Println("Aborted.")
-					os.Exit(0)
+					return nil
 				}
 			}
 			
@@ -263,7 +274,7 @@ var agentTokenRevokeCmd = &cobra.Command{
 			fmt.Scanln(&response)
 			if response != "y" && response != "Y" {
 				fmt.Println("Aborted.")
-				os.Exit(0)
+				return nil
 			}
 		}
 
@@ -301,7 +312,7 @@ var agentDeleteCmd = &cobra.Command{
 			fmt.Scanln(&response)
 			if response != "y" && response != "Y" {
 				fmt.Println("Aborted.")
-				os.Exit(0)
+				return nil
 			}
 		}
 
@@ -335,6 +346,7 @@ func init() {
 	agentRegisterCmd.Flags().StringP("project", "p", "", "scope to a specific project")
 	agentRegisterCmd.Flags().StringP("label", "l", "", "human label for the first token")
 	agentRegisterCmd.Flags().StringP("expires", "e", "", "token expiry (e.g. 30d, 90d)")
+	agentRegisterCmd.Flags().String("env", "", "environment for the token (development, staging, production)")
 	agentRegisterCmd.Flags().Bool("output-json", false, "output as JSON instead of formatted text") // Add this if needed later
 
 	// Flags for list
@@ -344,6 +356,7 @@ func init() {
 	// Flags for token issue
 	agentTokenIssueCmd.Flags().StringP("label", "l", "", "label for this token")
 	agentTokenIssueCmd.Flags().StringP("expires", "e", "", "token expiry (e.g. 30d, 90d)")
+	agentTokenIssueCmd.Flags().String("env", "", "environment for the token (development, staging, production)")
 	agentTokenIssueCmd.Flags().Bool("output-json", false, "output as JSON")
 
 	// Flags for token list

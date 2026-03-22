@@ -67,6 +67,13 @@ agentsecrets project create my-app
 
 This writes `.agentsecrets/project.json` in the current directory, linking it to the remote project. Every `secrets` operation uses this project context.
 
+By default, new projects use the `development` environment. You can isolate your secrets by switching to `staging` or `production` at any time:
+
+```bash
+agentsecrets environment switch staging
+```
+*(Note: Do not edit `.agent/workflows/agentsecrets.md` directly to change environments, the active environment is handled automatically by the CLI context for both you and your AI).*
+
 ---
 
 ## 3. Store Secrets
@@ -166,7 +173,7 @@ agentsecrets proxy logs --last 5
 
 ```
 TIME      RESULT  METHOD  URL                              KEY          AUTH    STATUS  REASON  DURATION
-14:23:01  ✓ OK    GET     api.stripe.com/v1/balance        STRIPE_KEY   bearer  200     -       245ms
+14:23:01  * OK    GET     api.stripe.com/v1/balance        STRIPE_KEY   bearer  200     -       245ms
 ```
 
 ---

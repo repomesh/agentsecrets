@@ -49,7 +49,8 @@ func runEnv(cmd *cobra.Command, args []string) error {
 	}
 
 	// Resolve all secrets from keychain
-	secrets, err := keyring.GetAllProjectSecrets(project.ProjectID)
+	envName := config.ResolveEnvironment()
+	secrets, err := keyring.GetAllProjectSecrets(project.ProjectID, envName)
 	if err != nil {
 		return fmt.Errorf("failed to load secrets from keychain: %w", err)
 	}
@@ -90,11 +91,19 @@ func runEnv(cmd *cobra.Command, args []string) error {
 	// Forward signals to child
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	done := make(chan struct{})
 	go func() {
-		sig := <-sigChan
-		if childCmd.Process != nil {
-			childCmd.Process.Signal(sig)
+		select {
+		case sig := <-sigChan:
+			if childCmd.Process != nil {
+				childCmd.Process.Signal(sig)
+			}
+		case <-done:
 		}
+	}()
+	defer func() {
+		signal.Stop(sigChan)
+		close(done)
 	}()
 
 	// Audit log: key names only

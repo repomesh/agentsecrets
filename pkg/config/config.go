@@ -24,12 +24,15 @@ import (
 
 // GlobalConfig represents ~/.agentsecrets/config.json
 type GlobalConfig struct {
-	Email               string                      `json:"email,omitempty"`
-	SelectedWorkspaceID string                      `json:"selected_workspace_id,omitempty"`
-	SelectedProjectID   string                      `json:"selected_project_id,omitempty"`
-	Workspaces          map[string]WorkspaceCacheEntry `json:"workspaces,omitempty"`
-	PasswordHash        string                      `json:"password_hash,omitempty"` // Added for local password verification
-	StorageMode         int                         `json:"storage_mode,omitempty"` // 1 = keychain (default), 2 = env_file
+	Email                string                      `json:"email,omitempty"`
+	SelectedWorkspaceID  string                      `json:"selected_workspace_id,omitempty"`
+	SelectedProjectID    string                      `json:"selected_project_id,omitempty"`
+	SelectedEnvironment  string                      `json:"selected_environment,omitempty"` // "development", "staging", "production"
+	Workspaces           map[string]WorkspaceCacheEntry `json:"workspaces,omitempty"`
+	PasswordHash         string                      `json:"password_hash,omitempty"` // Added for local password verification
+	DefaultStorageMode   int                         `json:"default_storage_mode"` // 1 = keychain (default), 2 = env_file
+	LastUpdateCheck      int64                       `json:"last_update_check,omitempty"`
+	LatestVersion        string                      `json:"latest_version,omitempty"`
 }
 
 // WorkspaceCacheEntry is a cached workspace with its decrypted key
@@ -57,6 +60,7 @@ type ProjectConfig struct {
 	WorkspaceName string `json:"workspace_name"`
 	LastPull      string `json:"last_pull"`
 	LastPush      string `json:"last_push"`
+	StorageMode   int    `json:"storage_mode"`
 }
 
 // Paths returns the standard config file paths
@@ -125,7 +129,7 @@ func InitGlobalConfig() error {
 }
 
 // InitProjectConfig creates .agentsecrets/project.json in the current directory.
-func InitProjectConfig() error {
+func InitProjectConfig(storageMode int) error {
 	projectDir := filepath.Join(".", ".agentsecrets")
 	if err := os.MkdirAll(projectDir, 0755); err != nil {
 		return fmt.Errorf("failed to create project config directory: %w", err)
@@ -133,9 +137,19 @@ func InitProjectConfig() error {
 
 	projectFile := filepath.Join(projectDir, "project.json")
 	if _, err := os.Stat(projectFile); os.IsNotExist(err) {
-		defaultConfig := &ProjectConfig{Environment: "development"}
+		defaultConfig := &ProjectConfig{
+			Environment: "development",
+			StorageMode: storageMode,
+		}
 		if err := writeJSON(projectFile, defaultConfig, 0644); err != nil {
 			return err
+		}
+	} else {
+		// Update existing if it exists (for force re-init cases)
+		pc, err := LoadProjectConfig()
+		if err == nil && pc != nil {
+			pc.StorageMode = storageMode
+			return SaveProjectConfig(pc)
 		}
 	}
 
@@ -148,10 +162,30 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	var config GlobalConfig
-	if err := readJSON(paths.ConfigFile, &config); err != nil {
+	
+	data, err := os.ReadFile(paths.ConfigFile)
+	if err != nil {
 		return nil, err
 	}
+
+	var config GlobalConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, err
+	}
+
+	// Migration: If default_storage_mode is 0, check for legacy storage_mode key
+	if config.DefaultStorageMode == 0 {
+		var legacy struct {
+			StorageMode int `json:"storage_mode"`
+		}
+		if err := json.Unmarshal(data, &legacy); err == nil && legacy.StorageMode != 0 {
+			config.DefaultStorageMode = legacy.StorageMode
+		} else {
+			// Ensure it's never 0 (default to 1)
+			config.DefaultStorageMode = 1
+		}
+	}
+
 	return &config, nil
 }
 
@@ -449,21 +483,125 @@ func ClearProjectConfig() error {
 }
 
 // GetStorageMode returns the configured storage mode (1: keychain, 2: env_file).
-// Defaults to 1 (keychain) if not set.
+// Resolution order:
+// 1. AGENTSECRETS_STORAGE_MODE environment variable
+// 2. .agentsecrets/project.json storage_mode
+// 3. ~/.agentsecrets/config.json default_storage_mode
+// 4. Default to 1 (keychain)
 func GetStorageMode() int {
-	config, err := LoadGlobalConfig()
-	if err != nil || config.StorageMode == 0 {
-		return 1 // Default to keychain
+	// 1. Env var
+	if env := os.Getenv("AGENTSECRETS_STORAGE_MODE"); env != "" {
+		if env == "2" {
+			return 2
+		}
+		return 1
 	}
-	return config.StorageMode
+
+	// 2. Project config
+	if pc, err := LoadProjectConfig(); err == nil && pc.StorageMode != 0 {
+		return pc.StorageMode
+	}
+
+	// 3. Global config
+	if gc, err := LoadGlobalConfig(); err == nil && gc.DefaultStorageMode != 0 {
+		return gc.DefaultStorageMode
+	}
+
+	return 1 // Default to keychain
 }
 
-// SetStorageMode updates the storage mode in the global config.
+// SetStorageMode updates the default storage mode in the global config.
 func SetStorageMode(mode int) error {
 	c, err := LoadGlobalConfig()
 	if err != nil || c == nil {
 		c = &GlobalConfig{}
 	}
-	c.StorageMode = mode
+	c.DefaultStorageMode = mode
+	return SaveGlobalConfig(c)
+}
+
+// SetProjectStorageMode updates the storage mode in the local project config.
+func SetProjectStorageMode(mode int) error {
+	pc, err := LoadProjectConfig()
+	if err != nil || pc == nil {
+		// If project config doesn't exist, we fallback to global
+		// But usually we set this during init
+		return nil
+	}
+	pc.StorageMode = mode
+	return SaveProjectConfig(pc)
+}
+
+// --- Environment Resolution ---
+
+// ValidEnvironments is the list of valid environment names.
+var ValidEnvironments = []string{"development", "staging", "production"}
+
+// IsValidEnvironment returns true if the given string is a valid environment name.
+func IsValidEnvironment(env string) bool {
+	switch env {
+	case "development", "staging", "production":
+		return true
+	}
+	return false
+}
+
+// ResolveEnvironment returns the active environment for the current context.
+// Resolution order:
+// 1. AGENTSECRETS_ENV environment variable
+// 2. .agentsecrets/project.json environment field (walk up from cwd)
+// 3. ~/.agentsecrets/config.json selected_environment
+// 4. "development" (hardcoded default)
+func ResolveEnvironment() string {
+	env, _ := ResolveEnvironmentWithSource()
+	return env
+}
+
+// ResolveEnvironmentWithSource returns the active environment and its source.
+// Sources: "AGENTSECRETS_ENV", "project.json", "global config", "default"
+func ResolveEnvironmentWithSource() (string, string) {
+	// 1. Check env var
+	if env := os.Getenv("AGENTSECRETS_ENV"); env != "" {
+		if !IsValidEnvironment(env) {
+			fmt.Fprintf(os.Stderr, "Warning: AGENTSECRETS_ENV=%s is not a valid environment. Using development.\nValid environments: development, staging, production\n", env)
+			return "development", "default"
+		}
+		return env, "AGENTSECRETS_ENV"
+	}
+
+	// 2. Check project.json (use existing project root walk-up logic)
+	if p, err := LoadProjectConfig(); err == nil && p != nil {
+		if p.Environment != "" && IsValidEnvironment(p.Environment) {
+			return p.Environment, "project.json"
+		}
+	}
+
+	// 3. Check global config
+	if c, err := LoadGlobalConfig(); err == nil && c != nil {
+		if c.SelectedEnvironment != "" && IsValidEnvironment(c.SelectedEnvironment) {
+			return c.SelectedEnvironment, "global config"
+		}
+	}
+
+	// 4. Default
+	return "development", "default"
+}
+
+// GetSelectedEnvironment returns the globally selected environment.
+func GetSelectedEnvironment() string {
+	config, err := LoadGlobalConfig()
+	if err != nil || config.SelectedEnvironment == "" {
+		return "development"
+	}
+	return config.SelectedEnvironment
+}
+
+// SetSelectedEnvironment sets the globally selected environment.
+func SetSelectedEnvironment(env string) error {
+	c, _ := LoadGlobalConfig()
+	if c == nil {
+		c = &GlobalConfig{}
+	}
+	c.SelectedEnvironment = env
 	return SaveGlobalConfig(c)
 }

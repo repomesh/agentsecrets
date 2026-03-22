@@ -66,7 +66,7 @@ func (s *Service) Signup(req SignupRequest) error {
 		"terms_agreement":      true,
 	}
 
-	resp, err := s.API.Call("auth.signup", "POST", data, nil)
+	resp, err := s.API.Call("auth.signup", "POST", data, nil, nil)
 	if err != nil {
 		return fmt.Errorf("signup: API call failed: %w", err)
 	}
@@ -101,7 +101,7 @@ func (s *Service) PerformLogin(email, password string, privateKey, publicKey []b
 	resp, err := s.API.Call("auth.login", "POST", map[string]string{
 		"email":    email,
 		"password": password,
-	}, nil)
+	}, nil, nil)
 	if err != nil {
 		return fmt.Errorf("login: API call failed: %w", err)
 	}
@@ -226,7 +226,7 @@ func (s *Service) Logout() error {
 	email := config.GetEmail()
 
 	// Best-effort: tell server to invalidate tokens
-	_, _ = s.API.Call("auth.logout", "POST", nil, nil)
+	_, _ = s.API.Call("auth.logout", "POST", nil, nil, nil)
 
 	// Clear keyring
 	if email != "" {

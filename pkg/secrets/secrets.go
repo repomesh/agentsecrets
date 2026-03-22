@@ -1,9 +1,11 @@
+// Package secrets orchestrates encrypted secret storage, retrieval, and synchronisation with the cloud API.
 package secrets
 
 import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/The-17/agentsecrets/pkg/api"
@@ -28,11 +30,12 @@ func NewService(apiClient *api.Client) *Service {
 
 // Set adds or updates a single secret.
 func (s *Service) Set(key, value string) error {
-	return s.BatchSet(map[string]string{key: value})
+	return s.BatchSet(map[string]string{key: value}, "")
 }
 
 // BatchSet adds or updates multiple secrets in a single API call.
-func (s *Service) BatchSet(kv map[string]string) error {
+// If environment is empty, it uses the currently resolved environment.
+func (s *Service) BatchSet(kv map[string]string, environment string) error {
 	project, err := config.LoadProjectConfig()
 	if err != nil || project.ProjectID == "" {
 		return fmt.Errorf("batch set: no project configured in current directory")
@@ -43,26 +46,32 @@ func (s *Service) BatchSet(kv map[string]string) error {
 		return fmt.Errorf("batch set: %w", err)
 	}
 
-	var apiSecrets []map[string]string
+	env := environment
+	if env == "" {
+		env = config.ResolveEnvironment()
+	}
+	
+	apiSecrets := make(map[string]string)
 	for k, v := range kv {
 		// 1. Encrypt for cloud
 		encryptedValue, err := crypto.EncryptSecret(v, workspaceKey)
 		if err != nil {
 			return fmt.Errorf("batch set: encryption failed for %s: %w", k, err)
 		}
-		apiSecrets = append(apiSecrets, map[string]string{"key": k, "value": encryptedValue})
+		apiSecrets[k] = encryptedValue
 
 		// 2. Store in OS Keychain (for Proxy support)
-		_ = keyring.SetSecret(project.ProjectID, k, v)
+		_ = keyring.SetSecret(project.ProjectID, env, k, v)
 	}
 
-	// 3. Sync to cloud
+	// 3. Sync to cloud (Single bulk call with dictionary)
 	data := map[string]interface{}{
-		"project_id": project.ProjectID,
-		"secrets":    apiSecrets,
+		"project_id":  project.ProjectID,
+		"environment": env,
+		"secrets":     apiSecrets,
 	}
 
-	resp, err := s.API.Call("secrets.create", "POST", data, nil)
+	resp, err := s.API.Call("secrets.create", "POST", data, nil, nil)
 	if err != nil {
 		return fmt.Errorf("batch set: API call failed: %w", err)
 	}
@@ -77,6 +86,30 @@ func (s *Service) BatchSet(kv map[string]string) error {
 		return fmt.Errorf("batch set: failed to update .env: %w", err)
 	}
 
+	// Update .env.example
+	_ = s.UpdateEnvExample()
+
+	return nil
+}
+
+// BatchSetLocal updates local storage (keychain and .env) without calling the API.
+// Used during merge/copy flows if needed, or by Pull.
+func (s *Service) BatchSetLocal(kv map[string]string, env string) error {
+	project, err := config.LoadProjectConfig()
+	if err != nil || project.ProjectID == "" {
+		return fmt.Errorf("batch set local: no project configured")
+	}
+
+	for k, v := range kv {
+		_ = keyring.SetSecret(project.ProjectID, env, k, v)
+	}
+	
+	// We only write to .env if the environment matches the current active one
+	if env == config.ResolveEnvironment() {
+		_ = s.Env.Write(kv)
+	}
+	
+	_ = s.UpdateEnvExample()
 	return nil
 }
 
@@ -87,16 +120,19 @@ func (s *Service) Get(key string) (string, error) {
 		return "", fmt.Errorf("get secret: no project configured in current directory")
 	}
 
+	env := config.ResolveEnvironment()
+
 	// Try keychain first (fast paths)
-	if val, err := keyring.GetSecret(project.ProjectID, key); err == nil {
+	if val, err := keyring.GetSecret(project.ProjectID, env, key); err == nil {
 		return val, nil
 	}
 
 	// Fallback to API
 	resp, err := s.API.Call("secrets.get", "GET", nil, map[string]string{
-		"project_id": project.ProjectID,
-		"key":        key,
-	})
+		"project_id":  project.ProjectID,
+		"environment": env,
+		"key":         key,
+	}, nil)
 	if err != nil {
 		return "", fmt.Errorf("get secret: API call failed: %w", err)
 	}
@@ -126,7 +162,7 @@ func (s *Service) Get(key string) (string, error) {
 	}
 
 	// Cache in keychain
-	_ = keyring.SetSecret(project.ProjectID, key, plaintext)
+	_ = keyring.SetSecret(project.ProjectID, env, key, plaintext)
 
 	return plaintext, nil
 }
@@ -138,8 +174,13 @@ type SecretMetadata struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
-// List returns all secret keys for the project. If showValues is true, it decrypts them.
-func (s *Service) List(showValues bool) ([]SecretMetadata, error) {
+// List returns all secret keys for the project in the active environment.
+func (s *Service) List() ([]SecretMetadata, error) {
+	return s.ListForEnv(config.ResolveEnvironment())
+}
+
+// ListForEnv returns all secret keys for the project in the specified environment.
+func (s *Service) ListForEnv(env string) ([]SecretMetadata, error) {
 	project, err := config.LoadProjectConfig()
 	if err != nil || project.ProjectID == "" {
 		return nil, fmt.Errorf("list secrets: no project configured in current directory")
@@ -147,6 +188,8 @@ func (s *Service) List(showValues bool) ([]SecretMetadata, error) {
 
 	resp, err := s.API.Call("secrets.list", "GET", nil, map[string]string{
 		"project_id": project.ProjectID,
+	}, map[string]string{
+		"environment": env,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list secrets: API call failed: %w", err)
@@ -166,19 +209,6 @@ func (s *Service) List(showValues bool) ([]SecretMetadata, error) {
 		return nil, fmt.Errorf("list secrets: failed to parse response: %w", err)
 	}
 
-	if showValues {
-		wsKey, err := config.GetProjectWorkspaceKey()
-		if err != nil {
-			return nil, err
-		}
-
-		for i, s := range res.Data.Secrets {
-			if plaintext, err := crypto.DecryptSecret(s.Value, wsKey); err == nil {
-				res.Data.Secrets[i].Value = plaintext
-			}
-		}
-	}
-
 	return res.Data.Secrets, nil
 }
 
@@ -191,24 +221,33 @@ func (s *Service) Pull(targetKeys []string) error {
 		return nil
 	}
 
-	secrets, err := s.List(true)
+	secrets, err := s.List()
 	if err != nil {
 		return err
 	} 
 
+	wsKey, err := config.GetProjectWorkspaceKey()
+	if err != nil {
+		return err
+	}
 	filter := make(map[string]bool)
 	for _, k := range targetKeys {
 		filter[k] = true
 	}
 
 	project, _ := config.LoadProjectConfig()
+	env := config.ResolveEnvironment()
 	secretsMap := make(map[string]string)
 	for _, s := range secrets {
 		if isSelective && !filter[s.Key] {
 			continue
 		}
-		secretsMap[s.Key] = s.Value
-		_ = keyring.SetSecret(project.ProjectID, s.Key, s.Value)
+		plaintext, err := crypto.DecryptSecret(s.Value, wsKey)
+		if err != nil {
+			continue
+		}
+		secretsMap[s.Key] = plaintext
+		_ = keyring.SetSecret(project.ProjectID, env, s.Key, plaintext)
 	}
 
 	if isSelective && len(secretsMap) == 0 {
@@ -223,6 +262,7 @@ func (s *Service) Pull(targetKeys []string) error {
 	project.LastPull = time.Now().Format(time.RFC3339)
 	_ = config.SaveProjectConfig(project)
 
+	_ = s.UpdateEnvExample()
 	return nil
 }
 
@@ -234,9 +274,10 @@ func (s *Service) Push() error {
 	}
 
 	var localSecrets map[string]string
+	env := config.ResolveEnvironment()
 
 	if config.GetStorageMode() == 1 {
-		localSecrets, err = keyring.GetAllProjectSecrets(project.ProjectID)
+		localSecrets, err = keyring.GetAllProjectSecrets(project.ProjectID, env)
 	} else {
 		localSecrets, err = s.Env.Read()
 	}
@@ -254,23 +295,26 @@ func (s *Service) Push() error {
 		return fmt.Errorf("push secrets: %w", err)
 	}
 
-	var apiSecrets []map[string]string
+	apiSet := make(map[string]string)
 	for k, v := range localSecrets {
 		encrypted, err := crypto.EncryptSecret(v, workspaceKey)
 		if err != nil {
 			return fmt.Errorf("push secrets: encryption failed for key %s: %w", k, err)
 		}
-		apiSecrets = append(apiSecrets, map[string]string{"key": k, "value": encrypted})
-		// Sync to keychain
-		_ = keyring.SetSecret(project.ProjectID, k, v)
+		apiSet[k] = encrypted
+		
+		// 1. Sync to keychain
+		_ = keyring.SetSecret(project.ProjectID, env, k, v)
 	}
 
+	// 2. Sync to cloud (Bulk dictionary format)
 	data := map[string]interface{}{
-		"project_id": project.ProjectID,
-		"secrets":    apiSecrets,
+		"project_id":  project.ProjectID,
+		"environment": env,
+		"secrets":     apiSet,
 	}
 
-	resp, err := s.API.Call("secrets.create", "POST", data, nil)
+	resp, err := s.API.Call("secrets.create", "POST", data, nil, nil)
 	if err != nil {
 		return fmt.Errorf("push secrets: API call failed: %w", err)
 	}
@@ -284,6 +328,7 @@ func (s *Service) Push() error {
 	project.LastPush = time.Now().Format(time.RFC3339)
 	_ = config.SaveProjectConfig(project)
 
+	_ = s.UpdateEnvExample()
 	return nil
 }
 
@@ -295,10 +340,12 @@ func (s *Service) Delete(key string) error {
 	}
 
 	// 1. Delete from API
+	env := config.ResolveEnvironment()
 	resp, err := s.API.Call("secrets.delete", "DELETE", nil, map[string]string{
-		"project_id": project.ProjectID,
-		"key":        key,
-	})
+		"project_id":  project.ProjectID,
+		"environment": env,
+		"key":         key,
+	}, nil)
 	if err != nil {
 		return fmt.Errorf("delete secret: API call failed: %w", err)
 	}
@@ -314,8 +361,9 @@ func (s *Service) Delete(key string) error {
 	}
 
 	// 3. Delete from Keychain
-	_ = keyring.DeleteSecret(project.ProjectID, key)
+	_ = keyring.DeleteSecret(project.ProjectID, env, key)
 
+	_ = s.UpdateEnvExample()
 	return nil
 }
 
@@ -327,57 +375,162 @@ type DiffResult struct {
 	Unchanged []string
 }
 
-// Diff compares local secrets (either .env or keychain) with cloud secrets.
-func (s *Service) Diff() (*DiffResult, error) {
-	var local map[string]string
+
+// Diff returns the differences between a source and a target.
+// If fromEnv is "", source is local (.env or keychain).
+// If toEnv is "", target is cloud active environment.
+func (s *Service) Diff(fromEnv, toEnv string) (*DiffResult, error) {
+	var source map[string]string
+	var target map[string]string
 	var err error
 
-	// When StorageMode == 1, the local source of truth is the keychain.
-	if config.GetStorageMode() == 1 {
-		project, _ := config.LoadProjectConfig()
-		local, err = keyring.GetAllProjectSecrets(project.ProjectID)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		local, err = s.Env.Read()
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	cloud, err := s.List(true)
+	wsKey, err := config.GetProjectWorkspaceKey()
 	if err != nil {
 		return nil, err
 	}
 
+	// 1. Resolve Source
+	if fromEnv != "" {
+		// Source is Cloud(fromEnv)
+		list, err := s.ListForEnv(fromEnv)
+		if err != nil {
+			return nil, err
+		}
+		source = make(map[string]string)
+		for _, m := range list {
+			if p, err := crypto.DecryptSecret(m.Value, wsKey); err == nil {
+				source[m.Key] = p
+			}
+		}
+	} else {
+		// Source is Local
+		if config.GetStorageMode() == 1 {
+			project, _ := config.LoadProjectConfig()
+			env := config.ResolveEnvironment()
+			source, err = keyring.GetAllProjectSecrets(project.ProjectID, env)
+		} else {
+			source, err = s.Env.Read()
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// 2. Resolve Target
+	targetEnv := toEnv
+	if targetEnv == "" {
+		targetEnv = config.ResolveEnvironment()
+	}
+	list, err := s.ListForEnv(targetEnv)
+	if err != nil {
+		return nil, err
+	}
+	target = make(map[string]string)
+	for _, m := range list {
+		if p, err := crypto.DecryptSecret(m.Value, wsKey); err == nil {
+			target[m.Key] = p
+		}
+	}
+
+	// 3. Compare Source vs Target
 	res := &DiffResult{
 		Changed: make(map[string][2]string),
 	}
 
-	cloudMap := make(map[string]string)
-	for _, c := range cloud {
-		cloudMap[c.Key] = c.Value
-	}
-
-	// Check local vs cloud
-	for k, v := range local {
-		if cloudVal, ok := cloudMap[k]; ok {
-			if v != cloudVal {
-				res.Changed[k] = [2]string{v, cloudVal}
+	for k, v := range source {
+		if targetVal, ok := target[k]; ok {
+			if v != targetVal {
+				res.Changed[k] = [2]string{v, targetVal}
 			} else {
 				res.Unchanged = append(res.Unchanged, k)
 			}
-			delete(cloudMap, k)
+			delete(target, k)
 		} else {
 			res.Added = append(res.Added, k)
 		}
 	}
 
-	// Remaining keys in cloudMap are removed locally
-	for k := range cloudMap {
+	// Remaining keys in target are removed in source (relative to target)
+	for k := range target {
 		res.Removed = append(res.Removed, k)
 	}
 
 	return res, nil
+}
+
+// UpdateEnvExample fetches secrets across development, staging, and production 
+// and regenerates .env.example with correct environment scopes.
+func (s *Service) UpdateEnvExample() error {
+	project, err := config.LoadProjectConfig()
+	if err != nil || project.ProjectID == "" {
+		return nil
+	}
+	
+	wsKey, err := config.GetProjectWorkspaceKey()
+	if err != nil {
+		return err
+	}
+
+	environments := []string{"development", "staging", "production"}
+	keyEnvValues := make(map[string]map[string]string)
+	allKeys := make(map[string]bool)
+
+	for _, env := range environments {
+		resp, err := s.API.Call("secrets.list", "GET", nil, map[string]string{
+			"project_id": project.ProjectID,
+		}, map[string]string{
+			"environment": env,
+		})
+		
+		if err == nil && resp.StatusCode == http.StatusOK {
+			var res struct {
+				Data struct {
+					Secrets []SecretMetadata `json:"secrets"`
+				} `json:"data"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&res); err == nil {
+				for _, secret := range res.Data.Secrets {
+					if plaintext, err := crypto.DecryptSecret(secret.Value, wsKey); err == nil {
+						if keyEnvValues[secret.Key] == nil {
+							keyEnvValues[secret.Key] = make(map[string]string)
+						}
+						keyEnvValues[secret.Key][env] = plaintext
+						allKeys[secret.Key] = true
+					}
+				}
+			}
+			resp.Body.Close()
+		}
+	}
+
+	var lines []string
+	lines = append(lines, "# AgentSecrets — generated by agentsecrets secrets pull")
+	lines = append(lines, "# Keys marked [all] exist in all three environments")
+	lines = append(lines, "# Environment-specific keys show which environments they belong to\n")
+
+	for key := range allKeys {
+		envsMap := keyEnvValues[key]
+		
+		valDev, hasDev := envsMap["development"]
+		valStg, hasStg := envsMap["staging"]
+		valPrd, hasPrd := envsMap["production"]
+
+		allThree := hasDev && hasStg && hasPrd
+		sameValue := allThree && (valDev == valStg) && (valStg == valPrd)
+
+		var annotation string
+		if sameValue {
+			annotation = "[all]"
+		} else {
+			var segments []string
+			if hasDev { segments = append(segments, "[development]") }
+			if hasStg { segments = append(segments, "[staging]") }
+			if hasPrd { segments = append(segments, "[production]") }
+			annotation = strings.Join(segments, " ")
+		}
+
+		lines = append(lines, fmt.Sprintf("%-24s # %s", key+"=", annotation))
+	}
+
+	return s.Env.WriteEnvExample(strings.Join(lines, "\n") + "\n")
 }

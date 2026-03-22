@@ -9,6 +9,7 @@ import (
 	"github.com/The-17/agentsecrets/pkg/config"
 	"github.com/The-17/agentsecrets/pkg/ui"
 	"github.com/The-17/agentsecrets/pkg/workspaces"
+	"fmt"
 )
 
 // Version is set at build time via ldflags
@@ -42,6 +43,15 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() error {
+	// Run update check. It's efficient (24h interval) and has a short timeout.
+	if res, _ := config.CheckForUpdates(Version); res != nil && res.NewVersionAvailable {
+		ui.Banner(fmt.Sprintf("Update Available: %s → %s", res.CurrentVersion, res.LatestVersion))
+		ui.Info("Run 'brew upgrade agentsecrets', 'npm install -g @the-17/agentsecrets',")
+		ui.Info("or 'pip install agentsecrets-cli' to update.")
+		ui.Divider()
+		fmt.Println()
+	}
+
 	return rootCmd.Execute()
 }
 
@@ -68,6 +78,7 @@ func init() {
 	projectCmd.PersistentPreRunE = authService.EnsureAuth
 	secretsCmd.PersistentPreRunE = authService.EnsureAuth
 	callCmd.PersistentPreRunE = authService.EnsureAuth
+	environmentCmd.PersistentPreRunE = authService.EnsureAuth
 
 	rootCmd.AddCommand(workspaceCmd)
 	rootCmd.AddCommand(projectCmd)
@@ -77,6 +88,7 @@ func init() {
 	rootCmd.AddCommand(proxyCmd)
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(callCmd)
+	rootCmd.AddCommand(environmentCmd)
 	rootCmd.AddCommand(NewEnvCmd())
 	rootCmd.AddCommand(NewExecCmd())
 }

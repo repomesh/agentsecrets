@@ -20,6 +20,7 @@ import (
 type AuditEvent struct {
 	ID             string    `json:"id"`
 	Timestamp      time.Time `json:"timestamp"`
+	Environment    string    `json:"environment,omitempty"`  // "development", "staging", "production"
 	SecretKeys     []string  `json:"secret_keys"`            // KEY NAMES e.g. ["STRIPE_SECRET_KEY"]
 	AgentID        string    `json:"agent_id,omitempty"`     // from agent identification
 	IdentityLevel  string    `json:"identity_level"`         // "anonymous", "declared", "issued"
@@ -75,10 +76,11 @@ func NewAuditLogger(dbPath string) (*AuditLogger, error) {
 	}
 
 	// Create table if it doesn't exist
-	schema := `
+	schemaTable := `
 	CREATE TABLE IF NOT EXISTS audit_events (
 		id TEXT PRIMARY KEY,
 		timestamp DATETIME NOT NULL,
+		environment TEXT,
 		agent_id TEXT,
 		identity_level TEXT,
 		method TEXT,
@@ -96,13 +98,35 @@ func NewAuditLogger(dbPath string) (*AuditLogger, error) {
 		token_id TEXT,
 		secret_keys TEXT,
 		auth_styles TEXT
-	);
+	);`
+	if _, err := db.Exec(schemaTable); err != nil {
+		return nil, fmt.Errorf("failed to initialize table: %w", err)
+	}
+
+	// Apply schema migrations for older databases
+	// SQLite ignores the error if the column already exists (or we just discard it)
+	columns := []string{
+		"environment",
+		"agent_id",
+		"identity_level",
+		"workspace_id",
+		"project_id",
+		"token_id",
+		"caller_role",
+	}
+	for _, col := range columns {
+		query := fmt.Sprintf("ALTER TABLE audit_events ADD COLUMN %s TEXT;", col)
+		_, _ = db.Exec(query) // intentionally ignore error
+	}
+
+	schemaIndexes := `
 	CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_events(timestamp);
 	CREATE INDEX IF NOT EXISTS idx_audit_agent ON audit_events(agent_id);
 	CREATE INDEX IF NOT EXISTS idx_audit_domain ON audit_events(domain);
+	CREATE INDEX IF NOT EXISTS idx_audit_environment ON audit_events(environment);
 	`
-	if _, err := db.Exec(schema); err != nil {
-		return nil, fmt.Errorf("failed to initialize schema: %w", err)
+	if _, err := db.Exec(schemaIndexes); err != nil {
+		return nil, fmt.Errorf("failed to initialize indexes: %w", err)
 	}
 
 	return &AuditLogger{db: db}, nil
@@ -122,16 +146,17 @@ func (a *AuditLogger) Log(event AuditEvent) error {
 
 	query := `
 	INSERT INTO audit_events (
-		id, timestamp, agent_id, identity_level, method, target_url, 
+		id, timestamp, environment, agent_id, identity_level, method, target_url, 
 		domain, status_code, duration_ms, status, reason, redacted, 
 		resolution_path, caller_role, workspace_id, project_id, token_id, 
 		secret_keys, auth_styles
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err := a.db.ExecContext(context.Background(), query,
 		event.ID,
 		event.Timestamp.UTC(), // Important standard for SQLite
+		event.Environment,
 		event.AgentID,
 		event.IdentityLevel,
 		event.Method,

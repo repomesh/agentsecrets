@@ -1,3 +1,4 @@
+// Package mcp implements a Model Context Protocol server exposing api_call and list_secrets tools for AI agents.
 package mcp
 
 import (
@@ -160,7 +161,7 @@ func handleListSecrets(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 	svc := secrets.NewService(apiClient)
 
 	// List keys only (no values)
-	list, err := svc.List(false)
+	list, err := svc.List()
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to list secrets: %v", err)), nil
 	}

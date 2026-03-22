@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/The-17/agentsecrets/pkg/auth"
 	"github.com/The-17/agentsecrets/pkg/config"
-	"github.com/The-17/agentsecrets/pkg/secrets"
 	"github.com/The-17/agentsecrets/pkg/ui"
 )
 
@@ -41,20 +41,22 @@ func init() {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
-	// Check 1: Does ~/.agentsecrets/config.json exist?
+	var modeToUse int
+
+	// Phase 1: Global Setup (Self-Contained)
 	if !config.GlobalConfigExists() {
-		fmt.Println("Setting up AgentSecrets...")
+		ui.Info("Setting up AgentSecrets...")
 		
 		if err := config.InitGlobalConfig(); err != nil {
 			return fmt.Errorf("failed to initialize global config: %w", err)
 		}
 
-		// Ask for storage mode 
-		modeToSet := storageMode
+		// First-ever run: prompt for storage mode unless flag passed
+		modeToUse = storageMode
 		if !cmd.Flags().Changed("storage-mode") {
 			var modeChoice string
 			err := huh.NewSelect[string]().
-				Title("How would you like secrets to be stored locally?").
+				Title("How would you like secrets to be stored locally by default?").
 				Options(
 					huh.NewOption("1. Keychain only (recommended) — values never written to disk.\n   .env.example created with key names only.", "1"),
 					huh.NewOption("2. .env file — plaintext file, compatible with all existing tooling.", "2"),
@@ -64,20 +66,21 @@ func runInit(cmd *cobra.Command, args []string) error {
 			
 			if err == nil {
 				if modeChoice == "2" {
-					modeToSet = 2
+					modeToUse = 2
 				} else {
-					modeToSet = 1
+					modeToUse = 1
 				}
 			}
 		}
 
-		if err := config.SetStorageMode(modeToSet); err != nil {
+		if err := config.SetStorageMode(modeToUse); err != nil {
 			return fmt.Errorf("failed to set storage mode: %w", err)
 		}
 
-		// Create blank .env files based on storage mode footprint to ensure they exist immediately
-		secretsEnv := secrets.NewEnvManager()
-		_ = secretsEnv.Write(make(map[string]string))
+		// Set default environment
+		if err := config.SetSelectedEnvironment("development"); err != nil {
+			return fmt.Errorf("failed to set default environment: %w", err)
+		}
 
 		_ = writeWorkflowFile()
 
@@ -109,32 +112,56 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 		
 		fmt.Println() // Spacer before project setup
+	} else {
+		// Subsequent runs: use global default
+		modeToUse = config.GetStorageMode()
 	}
 
-	// Check 2: Does .agentsecrets/project.json exist in the current directory or ancestors?
-	root, err := config.GetProjectRoot()
-	if err != nil {
-		return fmt.Errorf("failed to check project root: %w", err)
+	// Flag override (applies to both flows)
+	if cmd.Flags().Changed("storage-mode") {
+		modeToUse = storageMode
 	}
 
-	if root != "" {
-		fmt.Println("Project already initialised in this directory.")
+	// Phase 2: Project Setup
+	root, _ := config.GetProjectRoot()
+	if root != "" && !forceReinit {
+		ui.Info("Project already initialised in this directory.")
 		project, err := config.LoadProjectConfig()
 		if err == nil && project != nil {
-			fmt.Printf("  Name: %s\n  ID: %s\n  Workspace: %s\n", project.ProjectName, project.ProjectID, project.WorkspaceName)
+			ui.StatusRow("Name", project.ProjectName)
+			ui.StatusRow("ID", project.ProjectID)
+			ui.StatusRow("Workspace", project.WorkspaceName)
 		}
 		return nil
 	}
 
-	// Initialize project wrapper in current directory
-	fmt.Println("Initialising project wrapper in current directory...")
-	
-	if err := config.InitProjectConfig(); err != nil {
-		return fmt.Errorf("failed to initialize project config: %w", err)
-	}
-	
-	fmt.Println("  Config written to .agentsecrets/project.json")
-	fmt.Println("\nDone. Run `agentsecrets project create <name>` or `agentsecrets project use <name>` to link this folder.")
+	_ = ui.Spinner("Initialising project wrapper...", func() error {
+		if err := config.InitProjectConfig(modeToUse); err != nil {
+			return fmt.Errorf("failed to initialize project config: %w", err)
+		}
+
+		// If mode 2, create all .env files for standard environments
+		if modeToUse == 2 {
+			for _, envName := range config.ValidEnvironments {
+				filename := ".env"
+				if envName != "development" {
+					filename = ".env." + envName
+				}
+				path := filepath.Join(".", filename)
+				if _, err := os.Stat(path); os.IsNotExist(err) {
+					_ = os.WriteFile(path, []byte("# AgentSecrets environment: "+envName+"\n"), 0644)
+				}
+			}
+		}
+
+		// Update .gitignore with environment-specific .env files
+		updateGitignore(".")
+		return nil
+	})
+
+	ui.Success("Project initialised successfully!")
+	ui.Info("Config written to .agentsecrets/project.json")
+	ui.Info("Run 'agentsecrets project create <name>' or 'agentsecrets project use <name>' to link this folder.")
 
 	return nil
 }
@@ -281,6 +308,16 @@ agentsecrets project use project-name
 agentsecrets project create project-name
 agentsecrets project update project-name
 agentsecrets project delete project-name
+` + "```" + `
+
+## ENVIRONMENTS
+
+` + "```" + `bash
+agentsecrets environment list                 # View environments (development, staging, production)
+agentsecrets environment switch <name>        # Switch active environment
+agentsecrets secrets diff --from <x> --to <y> # Compare keys and values across environments
+agentsecrets environment copy <from> <to>     # Copy secrets across environments
+agentsecrets environment clean                # Delete all secrets in current environment
 ` + "```" + `
 
 ## DETECT AND RESOLVE DRIFT
@@ -459,5 +496,36 @@ func writeWorkflowFile() error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, "agentsecrets.md"), []byte(workflowContent), 0644)
+}
+
+// updateGitignore adds environment-specific .env files to .gitignore if not already present.
+func updateGitignore(projectRoot string) {
+	gitignorePath := filepath.Join(projectRoot, ".gitignore")
+	entries := []string{".env", ".env.development", ".env.staging", ".env.production"}
+
+	// Read existing content
+	existing := ""
+	if data, err := os.ReadFile(gitignorePath); err == nil {
+		existing = string(data)
+	}
+
+	// Append only missing entries
+	var toAdd []string
+	for _, entry := range entries {
+		if !strings.Contains(existing, entry) {
+			toAdd = append(toAdd, entry)
+		}
+	}
+
+	if len(toAdd) > 0 {
+		newContent := existing
+		if len(newContent) > 0 && !strings.HasSuffix(newContent, "\n") {
+			newContent += "\n"
+		}
+		newContent += "\n# AgentSecrets environment files\n"
+		newContent += strings.Join(toAdd, "\n")
+		newContent += "\n"
+		_ = os.WriteFile(gitignorePath, []byte(newContent), 0644)
+	}
 }
 

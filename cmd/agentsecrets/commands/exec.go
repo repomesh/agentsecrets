@@ -84,7 +84,8 @@ func runExec(cmd *cobra.Command, args []string) {
 	}
 
 	for _, id := range req.IDs {
-		val, err := keyring.GetSecret(project.ProjectID, id)
+		envName := config.ResolveEnvironment()
+		val, err := keyring.GetSecret(project.ProjectID, envName, id)
 		if err != nil || val == "" {
 			if resp.Errors == nil {
 				resp.Errors = make(map[string]ExecSecretError)

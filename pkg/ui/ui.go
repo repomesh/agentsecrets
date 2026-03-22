@@ -71,14 +71,14 @@ var (
 			Foreground(Dim)
 )
 
-// Success prints a green success message with a checkmark.
+// Success prints a green success message with an asterisk.
 func Success(msg string) {
-	fmt.Println(SuccessStyle.Render("✓ " + msg))
+	fmt.Println(SuccessStyle.Render("* " + msg))
 }
 
-// Error prints a red error message with an X.
+// Error prints a red error message with an x.
 func Error(msg string) {
-	fmt.Println(ErrorStyle.Render("✗ " + msg))
+	fmt.Println(ErrorStyle.Render("x " + msg))
 }
 
 // Warning prints a yellow warning message.

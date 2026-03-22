@@ -1,3 +1,4 @@
+// Package projects handles project creation, selection, updates, deletion, and team invites within workspaces.
 package projects
 
 import (
@@ -34,7 +35,7 @@ func NewService(client *api.Client) *Service {
 
 // List returns all projects for the currently selected workspace
 func (s *Service) List() ([]Project, error) {
-	resp, err := s.API.Call("projects.list", "GET", nil, nil)
+	resp, err := s.API.Call("projects.list", "GET", nil, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("list projects: %w", err)
 	}
@@ -83,7 +84,7 @@ func (s *Service) Create(name, description string) (*Project, error) {
 		data["description"] = description
 	}
 
-	resp, err := s.API.Call("projects.create", "POST", data, nil)
+	resp, err := s.API.Call("projects.create", "POST", data, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create project: %w", err)
 	}
@@ -120,7 +121,7 @@ func (s *Service) Use(name string) (*Project, error) {
 		"project_name": name,
 	}
 
-	resp, err := s.API.Call("projects.get", "GET", nil, params)
+	resp, err := s.API.Call("projects.get", "GET", nil, params, nil)
 	if err != nil {
 		return nil, fmt.Errorf("use project: %w", err)
 	}
@@ -200,7 +201,7 @@ func (s *Service) Update(oldName, newName, desc string) error {
 		"project_name": oldName,
 	}
 
-	resp, err := s.API.Call("projects.update", "PATCH", data, params)
+	resp, err := s.API.Call("projects.update", "PATCH", data, params, nil)
 	if err != nil {
 		return fmt.Errorf("update project: %w", err)
 	}
@@ -237,7 +238,7 @@ func (s *Service) Delete(name string) error {
 		"project_name": name,
 	}
 
-	resp, err := s.API.Call("projects.delete", "DELETE", nil, params)
+	resp, err := s.API.Call("projects.delete", "DELETE", nil, params, nil)
 	if err != nil {
 		return fmt.Errorf("delete project: %w", err)
 	}
@@ -272,7 +273,7 @@ func (s *Service) Invite(email, role string) error {
 	}
 
 	// 1. Fetch Invitee's Public Key
-	pubResp, err := s.API.Call("users.public_key", "GET", nil, map[string]string{"email": email})
+	pubResp, err := s.API.Call("users.public_key", "GET", nil, map[string]string{"email": email}, nil)
 	if err != nil {
 		return fmt.Errorf("failed to fetch public key for %s: %w", email, err)
 	}
@@ -329,14 +330,20 @@ func (s *Service) Invite(email, role string) error {
 		}
 
 		// Encrypt the new workspace key for both the owner and the invitee
-		encForOwner, _ := crypto.EncryptForUser(myPubKey, newWorkspaceKey)
-		encForInvitee, _ := crypto.EncryptForUser(inviteePubKey, newWorkspaceKey)
+		encForOwner, err := crypto.EncryptForUser(myPubKey, newWorkspaceKey)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt workspace key for owner: %w", err)
+		}
+		encForInvitee, err := crypto.EncryptForUser(inviteePubKey, newWorkspaceKey)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt workspace key for invitee: %w", err)
+		}
 
 		data["encrypted_workspace_key_owner"] = base64.StdEncoding.EncodeToString(encForOwner)
 		data["encrypted_workspace_key_invitee"] = base64.StdEncoding.EncodeToString(encForInvitee)
 
 		// Fetch current secrets and re-encrypt them with the NEW key
-		scrtResp, err := s.API.Call("secrets.list", "GET", nil, map[string]string{"project_id": project.ProjectID})
+		scrtResp, err := s.API.Call("secrets.list", "GET", nil, map[string]string{"project_id": project.ProjectID}, nil)
 		if err != nil {
 			return fmt.Errorf("failed to list current secrets for migration: %w", err)
 		}
@@ -350,9 +357,14 @@ func (s *Service) Invite(email, role string) error {
 				} `json:"secrets"`
 			} `json:"data"`
 		}
-		json.NewDecoder(scrtResp.Body).Decode(&scrtRes)
+		if err := json.NewDecoder(scrtResp.Body).Decode(&scrtRes); err != nil {
+			return fmt.Errorf("failed to decode secrets for migration: %w", err)
+		}
 
-		oldWsKeyRaw, _ := base64.StdEncoding.DecodeString(ws.Key)
+		oldWsKeyRaw, err := base64.StdEncoding.DecodeString(ws.Key)
+		if err != nil {
+			return fmt.Errorf("failed to decode old workspace key: %w", err)
+		}
 		var apiSecrets []map[string]string
 
 		for _, secret := range scrtRes.Data.Secrets {
@@ -360,7 +372,10 @@ func (s *Service) Invite(email, role string) error {
 			if err != nil {
 				continue // Skip failing secrets realistically
 			}
-			newEncrypted, _ := crypto.EncryptSecret(plaintext, newWorkspaceKey)
+			newEncrypted, err := crypto.EncryptSecret(plaintext, newWorkspaceKey)
+			if err != nil {
+				return fmt.Errorf("failed to re-encrypt secret %q: %w", secret.Key, err)
+			}
 			apiSecrets = append(apiSecrets, map[string]string{"key": secret.Key, "value": newEncrypted})
 		}
 		data["secrets"] = apiSecrets
@@ -372,7 +387,10 @@ func (s *Service) Invite(email, role string) error {
 			return fmt.Errorf("failed to decode current workspace key: %w", err)
 		}
 
-		encForInvitee, _ := crypto.EncryptForUser(inviteePubKey, wsKeyRaw)
+		encForInvitee, err := crypto.EncryptForUser(inviteePubKey, wsKeyRaw)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt workspace key for invitee: %w", err)
+		}
 		data["encrypted_workspace_key_invitee"] = base64.StdEncoding.EncodeToString(encForInvitee)
 	}
 
@@ -380,7 +398,7 @@ func (s *Service) Invite(email, role string) error {
 	invResp, err := s.API.Call("projects.invite", "POST", data, map[string]string{
 		"workspace_id": workspaceID,
 		"project_name": project.ProjectName,
-	})
+	}, nil)
 	if err != nil {
 		return fmt.Errorf("failed to send invite: %w", err)
 	}
@@ -397,7 +415,9 @@ func (s *Service) Invite(email, role string) error {
 			MigratedFromPersonal bool   `json:"migrated_from_personal"`
 		} `json:"data"`
 	}
-	json.NewDecoder(invResp.Body).Decode(&result)
+	if err := json.NewDecoder(invResp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to decode invite response: %w", err)
+	}
 
 	// 4. Update local config if migrated
 	if result.Data.MigratedFromPersonal && result.Data.WorkspaceID != "" {

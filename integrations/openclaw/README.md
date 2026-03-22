@@ -1,8 +1,8 @@
 # AgentSecrets — OpenClaw Integration
 
-> Zero-knowledge credential proxy for OpenClaw agents
+> Native zero-knowledge credential resolution for OpenClaw via the built-in exec provider
 
-Your OpenClaw agent can make authenticated API calls to any service — Stripe, OpenAI, GitHub, Google Maps, etc. — without ever seeing your API key values.
+AgentSecrets ships as a native exec provider for OpenClaw's SecretRef system. Your agent resolves credentials at execution time without storing them anywhere OpenClaw can read — no plaintext config, no env block, no values in agent context.
 
 ## Setup
 
@@ -13,62 +13,72 @@ openclaw skill install agentsecrets
 
 ### Manual
 ```bash
-# Copy this directory to your OpenClaw skills folder
 cp -r integrations/openclaw ~/.openclaw/skills/agentsecrets
 ```
 
 ## Prerequisites
 
-```bash
-pip install agentsecrets
-agentsecrets init
-agentsecrets secrets set STRIPE_KEY=sk_test_your_key
+Install the AgentSecrets CLI:
 
-# Authorize domains your agent is allowed to access
+```bash
+brew install The-17/tap/agentsecrets
+# or
+npm install -g @the-17/agentsecrets
+# or
+pip install agentsecrets-cli
+```
+
+Then initialise and configure:
+
+```bash
+agentsecrets init
+agentsecrets secrets set STRIPE_KEY=sk_live_...
 agentsecrets workspace allowlist add api.stripe.com
 ```
 
-## Usage
+## How the Exec Provider Works
 
-Once installed, just ask your OpenClaw agent:
+AgentSecrets registers itself as an exec provider in OpenClaw's SecretRef system (shipped in v2026.2.26). When your agent references a secret, OpenClaw calls the AgentSecrets binary directly to resolve it. The value is injected into the process at execution time and never written to any OpenClaw config file.
 
-> "Check my Stripe balance"
+```bash
+# OpenClaw resolves this via the AgentSecrets exec provider
+# The agent never sees the value — only the response
+agentsecrets exec
+```
 
-The agent will:
-1. Run `agentsecrets secrets list` to find available keys
-2. Run `agentsecrets call --url https://api.stripe.com/v1/balance --bearer STRIPE_KEY`
-3. Return the response — without ever seeing `sk_test_...`
+This means you do not need to configure credentials in `~/.openclaw/.env` or any OpenClaw config. The SecretRef system handles the resolution, and AgentSecrets handles the zero-knowledge guarantee.
 
-## Why This Matters
+## What the Agent Can Do
 
-OpenClaw stores credentials in plaintext (`~/.openclaw/.env`, config JSON files). After CVE-2026-25253 and the ClawHub supply chain attacks, **30,000+ installations were compromised** and API keys were stolen.
+Once installed, your OpenClaw agent can manage the full credentials workflow autonomously:
 
-AgentSecrets fixes this architecturally:
-- Keys in OS keychain, not plaintext files
-- Agent sees key **names**, never **values**
-- **Zero-Trust Domain Allowlist**: agent is structurally blocked from exfiltrating data to unauthorized domains
-- **Response Body Redaction**: if an API echoes your key in the response body, the proxy scrubs it before the agent sees it
-- **Full audit trail** of every key usage
-- Nothing to steal from agent memory or chat logs
+```bash
+agentsecrets status                          # check workspace, project, and active environment
+agentsecrets environment switch production   # switch to the correct environment
+agentsecrets secrets diff                    # detect any drift between local and cloud
+agentsecrets secrets pull                    # sync if needed
+agentsecrets call \
+  --url https://api.stripe.com/v1/balance \
+  --bearer STRIPE_KEY                        # make the authenticated call
+agentsecrets proxy logs                      # audit what happened
+```
 
-## Environment variables
+The agent passes key names. It never sees values. Every call is logged against the active environment.
 
-If your OpenClaw agent needs to run a command that requires environment variables (like `npm run dev` or a Python script), it knows to use the `agentsecrets env` command to securely inject them from the OS keychain:
+## Environment Variable Injection
+
+For processes that need credentials as environment variables:
 
 ```bash
 agentsecrets env -- npm run dev
+agentsecrets env -- python script.py
 ```
 
-## Publishing to ClawHub
-
-```bash
-clawhub publish integrations/openclaw
-```
+Values are injected into the child process at spawn time. Nothing is written to disk.
 
 ## Links
 
 - [Official Website](https://agentsecrets.theseventeen.co)
-- [Building AgentSecrets (Engineering Blog)](https://engineering.theseventeen.co/series/building-agentsecrets)
-- [AgentSecrets GitHub](https://github.com/The-17/agentsecrets)
+- [Engineering Blog](https://engineering.theseventeen.co/series/building-agentsecrets)
+- [GitHub](https://github.com/The-17/agentsecrets)
 - [Security Docs](https://github.com/The-17/agentsecrets/blob/main/docs/PROXY.md)
-- [The Seventeen](https://github.com/The-17)
