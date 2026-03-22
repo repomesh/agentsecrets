@@ -75,7 +75,7 @@ func (s *Service) RefreshSession(refreshToken string) error {
 		"refresh": refreshToken,
 	}
 
-	resp, err := s.API.Call("auth.refresh", "POST", data, nil)
+	resp, err := s.API.Call("auth.refresh", "POST", data, nil, nil)
 	if err != nil {
 		return err
 	}

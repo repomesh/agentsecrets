@@ -1,3 +1,4 @@
+// Package log provides audit log querying for both local SQLite and remote API sources.
 package log
 
 import (
@@ -18,6 +19,7 @@ type Filter struct {
 	Credential  string
 	Domain      string
 	Method      string
+	Environment string // "development", "staging", "production"
 	Status      int
 	StatusClass string // "2xx", "4xx", "5xx", "error"
 	Failed      bool
@@ -39,15 +41,11 @@ type Service struct {
 // NewService creates a new log service. If db is nil, it tries to connect to the default local SQLite DB.
 func NewService(client *api.Client, db *sql.DB) (*Service, error) {
 	if db == nil {
-		path, err := proxy.DefaultLogPath()
+		logger, err := proxy.NewAuditLogger("")
 		if err != nil {
 			return nil, err
 		}
-		// Open readonly if possible
-		db, err = sql.Open("sqlite", path)
-		if err != nil {
-			return nil, err
-		}
+		db = logger.DB()
 	}
 	return &Service{
 		client: client,
@@ -65,20 +63,30 @@ func (s *Service) Close() error {
 
 // QueryLocal fetches audit events from the local SQLite database.
 func (s *Service) QueryLocal(f Filter) ([]proxy.AuditEvent, error) {
-	query := "SELECT id, timestamp, agent_id, identity_level, method, target_url, domain, status_code, duration_ms, status, reason, redacted, resolution_path, caller_role, workspace_id, project_id, token_id, secret_keys, auth_styles FROM audit_events WHERE 1=1"
+	query := "SELECT id, timestamp, COALESCE(environment, '') as environment, agent_id, identity_level, method, target_url, domain, status_code, duration_ms, status, reason, redacted, resolution_path, caller_role, workspace_id, project_id, token_id, secret_keys, auth_styles FROM audit_events WHERE 1=1"
 	args := []interface{}{}
 
 	if f.Agent != "" {
-		query += " AND agent_id = ?"
-		args = append(args, f.Agent)
+		if f.Agent == "anonymous" || f.Agent == "(anon)" || f.Agent == "(anonymous)" {
+			query += " AND (agent_id = ? OR agent_id = '' OR agent_id IS NULL)"
+			args = append(args, f.Agent)
+		} else {
+			query += " AND agent_id = ?"
+			args = append(args, f.Agent)
+		}
 	}
 	if f.Token != "" {
 		query += " AND token_id = ?"
 		args = append(args, f.Token)
 	}
 	if f.Identity != "" {
-		query += " AND identity_level = ?"
-		args = append(args, f.Identity)
+		if f.Identity == "anonymous" {
+			query += " AND (identity_level = ? OR identity_level = '' OR identity_level IS NULL)"
+			args = append(args, f.Identity)
+		} else {
+			query += " AND identity_level = ?"
+			args = append(args, f.Identity)
+		}
 	}
 	if f.Credential != "" {
 		// SecretKeys is stored as a JSON string, e.g. ["STRIPE_KEY"]
@@ -124,6 +132,10 @@ func (s *Service) QueryLocal(f Filter) ([]proxy.AuditEvent, error) {
 		query += " AND project_id = ?"
 		args = append(args, f.ProjectID)
 	}
+	if f.Environment != "" {
+		query += " AND environment = ?"
+		args = append(args, f.Environment)
+	}
 	if !f.Since.IsZero() {
 		query += " AND timestamp >= ?"
 		args = append(args, f.Since.UTC())
@@ -161,11 +173,12 @@ func (s *Service) QueryLocal(f Filter) ([]proxy.AuditEvent, error) {
 	for rows.Next() {
 		var ev proxy.AuditEvent
 		var secretKeysJSON, authStylesJSON string
-		var agentID, identityLevel, method, targetURL, domain, status, reason, resolutionPath, callerRole, workspaceID, projectID, tokenID sql.NullString
+		var environment, agentID, identityLevel, method, targetURL, domain, status, reason, resolutionPath, callerRole, workspaceID, projectID, tokenID sql.NullString
 		
 		err := rows.Scan(
 			&ev.ID,
 			&ev.Timestamp,
+			&environment,
 			&agentID,
 			&identityLevel,
 			&method,
@@ -188,6 +201,7 @@ func (s *Service) QueryLocal(f Filter) ([]proxy.AuditEvent, error) {
 			return nil, fmt.Errorf("scan error: %w", err)
 		}
 
+		if environment.Valid { ev.Environment = environment.String }
 		if agentID.Valid { ev.AgentID = agentID.String }
 		if identityLevel.Valid { ev.IdentityLevel = identityLevel.String }
 		if method.Valid { ev.Method = method.String }
@@ -221,7 +235,7 @@ func (s *Service) GetLog(id string) (*proxy.AuditEvent, error) {
 		return nil, err
 	}
 	// Note: above filter is wrong for exact ID, need custom DB query.
-	query := "SELECT id, timestamp, agent_id, identity_level, method, target_url, domain, status_code, duration_ms, status, reason, redacted, resolution_path, caller_role, workspace_id, project_id, token_id, secret_keys, auth_styles FROM audit_events WHERE id = ?"
+	query := "SELECT id, timestamp, COALESCE(environment, '') as environment, agent_id, identity_level, method, target_url, domain, status_code, duration_ms, status, reason, redacted, resolution_path, caller_role, workspace_id, project_id, token_id, secret_keys, auth_styles FROM audit_events WHERE id = ?"
 	rows, err := s.db.Query(query, id)
 	if err != nil {
 		return nil, err
@@ -231,11 +245,12 @@ func (s *Service) GetLog(id string) (*proxy.AuditEvent, error) {
 	if rows.Next() {
 		var ev proxy.AuditEvent
 		var secretKeysJSON, authStylesJSON string
-		var agentID, identityLevel, method, targetURL, domain, status, reason, resolutionPath, callerRole, workspaceID, projectID, tokenID sql.NullString
+		var environment, agentID, identityLevel, method, targetURL, domain, status, reason, resolutionPath, callerRole, workspaceID, projectID, tokenID sql.NullString
 		
 		err := rows.Scan(
 			&ev.ID,
 			&ev.Timestamp,
+			&environment,
 			&agentID,
 			&identityLevel,
 			&method,
@@ -258,6 +273,7 @@ func (s *Service) GetLog(id string) (*proxy.AuditEvent, error) {
 			return nil, err
 		}
 
+		if environment.Valid { ev.Environment = environment.String }
 		if agentID.Valid { ev.AgentID = agentID.String }
 		if identityLevel.Valid { ev.IdentityLevel = identityLevel.String }
 		if method.Valid { ev.Method = method.String }

@@ -2,7 +2,9 @@ package commands
 
 import (
 	"fmt"
+	"sort"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
@@ -19,6 +21,9 @@ var (
 	secretsService *secrets.Service
 	pullForce      bool
 	pushForce      bool
+	allEnvs        bool
+	diffFrom       string
+	diffTo         string
 )
 
 // InitSecretsService sets up the service for the CLI
@@ -80,6 +85,9 @@ var secretsDiffCmd = &cobra.Command{
 func init() {
 	secretsPullCmd.Flags().BoolVarP(&pullForce, "force", "f", false, "Overwrite local changes without prompting")
 	secretsPushCmd.Flags().BoolVarP(&pushForce, "force", "f", false, "Push without prompting for missing keys")
+	secretsSetCmd.Flags().BoolVar(&allEnvs, "all-envs", false, "Set in all three environments simultaneously")
+	secretsDiffCmd.Flags().StringVar(&diffFrom, "from", "", "Source environment for cross-environment diff")
+	secretsDiffCmd.Flags().StringVar(&diffTo, "to", "", "Target environment for cross-environment diff")
 
 	secretsCmd.AddCommand(
 		secretsSetCmd,
@@ -107,8 +115,32 @@ func runSecretsSet(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	if allEnvs {
+		// Set in all three environments
+		keyNames := make([]string, 0, len(kv))
+		for k := range kv {
+			keyNames = append(keyNames, k)
+		}
+		fmt.Printf("This will set %s in development, staging, and production. Continue? (y/n): ", strings.Join(keyNames, ", "))
+		if !confirmYN() {
+			ui.Info("Cancelled.")
+			return nil
+		}
+
+		for _, env := range []string{"development", "staging", "production"} {
+			if err := ui.Spinner(fmt.Sprintf("Setting in %s...", env), func() error {
+				return secretsService.BatchSet(kv, env)
+			}); err != nil {
+				ui.Error(fmt.Sprintf("Failed to set in %s: %v", env, err))
+				continue
+			}
+			ui.Success(fmt.Sprintf("Set in %s", env))
+		}
+		return nil
+	}
+
 	if err := ui.Spinner(fmt.Sprintf("Encrypting and syncing %d secrets...", len(kv)), func() error {
-		return secretsService.BatchSet(kv)
+		return secretsService.BatchSet(kv, "")
 	}); err != nil {
 		return fmt.Errorf("failed to set secrets: %w", err)
 	}
@@ -135,31 +167,91 @@ func runSecretsGet(cmd *cobra.Command, args []string) error {
 }
 
 func runSecretsList(cmd *cobra.Command, args []string) error {
-	var list []secrets.SecretMetadata
+	activeEnv := config.ResolveEnvironment()
+	envs := []string{"development", "staging", "production"}
 
-	if err := ui.Spinner("Fetching keys...", func() error {
-		var e error
-		list, e = secretsService.List(false)
-		return e
+	type envResult struct {
+		env  string
+		keys []string
+	}
+	results := make(chan envResult, 3)
+	var wg sync.WaitGroup
+
+	if err := ui.Spinner("Fetching keys from all environments...", func() error {
+		for _, e := range envs {
+			wg.Add(1)
+			go func(envName string) {
+				defer wg.Done()
+				list, err := secretsService.ListForEnv(envName)
+				keys := []string{}
+				if err == nil {
+					for _, s := range list {
+						keys = append(keys, s.Key)
+					}
+				}
+				results <- envResult{env: envName, keys: keys}
+			}(e)
+		}
+		wg.Wait()
+		close(results)
+		return nil
 	}); err != nil {
 		ui.Error(fmt.Sprintf("List secrets: %v", err))
 		return nil
 	}
 
-	if len(list) == 0 {
-		ui.Info("No secrets found in this project. Use 'agentsecrets secrets set KEY=VALUE' to add one.")
+	// Map of key -> [devPresent, stagingPresent, prodPresent]
+	presence := make(map[string][3]bool)
+	allKeysSet := make(map[string]bool)
+
+	for res := range results {
+		idx := 0
+		switch res.env {
+		case "development": idx = 0
+		case "staging":     idx = 1
+		case "production":  idx = 2
+		}
+		for _, k := range res.keys {
+			p := presence[k]
+			p[idx] = true
+			presence[k] = p
+			allKeysSet[k] = true
+		}
+	}
+
+	if len(allKeysSet) == 0 {
+		fmt.Printf("\n%s\n", ui.WarningStyle.Render(fmt.Sprintf("! No secrets found in any environment.")))
+		fmt.Printf("Use %s to add one.\n\n", ui.BrandStyle.Render("agentsecrets secrets set KEY=VALUE"))
 		return nil
 	}
 
-	headers := []string{"Key"}
+	// Sort keys
+	var sortedKeys []string
+	for k := range allKeysSet {
+		sortedKeys = append(sortedKeys, k)
+	}
+	sort.Strings(sortedKeys)
 
-	rows := make([][]string, len(list))
-	for i, s := range list {
-		rows[i] = []string{ui.BrandStyle.Render(s.Key)}
+	headers := []string{"Key", "DEV", "STAGING", "PROD"}
+	rows := make([][]string, len(sortedKeys))
+
+	for i, k := range sortedKeys {
+		p := presence[k]
+		row := []string{ui.BrandStyle.Render(k)}
+		
+		for j := 0; j < 3; j++ {
+			if p[j] {
+				row = append(row, ui.SuccessStyle.Render("*"))
+			} else {
+				row = append(row, ui.DimStyle.Render("-"))
+			}
+		}
+		rows[i] = row
 	}
 
-	renderedTable := ui.RenderTable(headers, rows)
-	fmt.Printf("\n%s\n%s\n\n", ui.BannerStr("Project Secrets"), renderedTable)
+	fmt.Printf("\nEnvironment: %s\n\n", ui.BrandStyle.Render(activeEnv))
+	fmt.Println(ui.RenderTable(headers, rows))
+	fmt.Println()
 	return nil
 }
 
@@ -169,7 +261,7 @@ func runSecretsPull(cmd *cobra.Command, args []string) error {
 	// 1. Check for conflicts first
 	if err := ui.Spinner("Checking for conflicts...", func() error {
 		var e error
-		diff, e = secretsService.Diff()
+		diff, e = secretsService.Diff("", "")
 		return e
 	}); err != nil {
 		ui.Error("Failed to check for conflicts: " + err.Error())
@@ -231,6 +323,11 @@ func runSecretsPull(cmd *cobra.Command, args []string) error {
 		pullCount = len(targetKeys)
 	}
 
+	if pullCount == 0 {
+		ui.Info("No secrets found to pull.")
+		return nil
+	}
+
 	if err := ui.Spinner(fmt.Sprintf("Pulling %d secrets and allowlist...", pullCount), func() error {
 		if err := secretsService.Pull(targetKeys); err != nil {
 			return err
@@ -263,7 +360,7 @@ func runSecretsPush(cmd *cobra.Command, args []string) error {
 
 	if err := ui.Spinner("Checking for conflicts...", func() error {
 		var e error
-		diff, e = secretsService.Diff()
+		diff, e = secretsService.Diff("", "")
 		return e
 	}); err != nil {
 		ui.Error("Failed to check for conflicts: " + err.Error())
@@ -347,6 +444,16 @@ func runSecretsPush(cmd *cobra.Command, args []string) error {
 func runSecretsDelete(cmd *cobra.Command, args []string) error {
 	key := args[0]
 
+	// Confirm before deleting from production
+	env := config.ResolveEnvironment()
+	if env == "production" {
+		fmt.Printf("Delete %s from production? (y/n): ", key)
+		if !confirmYN() {
+			ui.Info("Delete cancelled.")
+			return nil
+		}
+	}
+
 	if err := ui.Spinner(fmt.Sprintf("Deleting %s...", key), func() error {
 		return secretsService.Delete(key)
 	}); err != nil {
@@ -363,7 +470,7 @@ func runSecretsDiff(cmd *cobra.Command, args []string) error {
 
 	if err := ui.Spinner("Comparing secrets & allowlist...", func() error {
 		var e error
-		diff, e = secretsService.Diff()
+		diff, e = secretsService.Diff(diffFrom, diffTo)
 		return e
 	}); err != nil {
 		ui.Error(fmt.Sprintf("Diff: %v", err))
@@ -416,33 +523,55 @@ func runSecretsDiff(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	sourceName := "Local"
+	if diffFrom != "" {
+		sourceName = upperFirst(diffFrom)
+	}
+	targetName := "Cloud"
+	if diffTo != "" {
+		targetName = upperFirst(diffTo)
+	} else {
+		targetName = upperFirst(config.ResolveEnvironment())
+	}
+
 	if len(diff.Added) == 0 && len(diff.Removed) == 0 && len(diff.Changed) == 0 && !allowlistDrift {
-		ui.Success("Local and cloud secrets/allowlist are in sync!")
+		ui.Success(fmt.Sprintf("%s and %s are in sync!", sourceName, targetName))
 		return nil
 	}
 
 	if len(diff.Added) > 0 || len(diff.Removed) > 0 || len(diff.Changed) > 0 {
 		fmt.Printf("SECRETS:\n")
-		if len(diff.Changed) > 0 {
-			var keys []string
-			for k := range diff.Changed {
-				keys = append(keys, ui.BrandStyle.Render(k))
-			}
-			fmt.Printf("  %s %s\n", strings.TrimSpace(ui.LabelStyle.Render("OUT OF SYNC:")), strings.Join(keys, ", "))
-		}
+		
+		fmt.Printf("\n  %s %s but missing in %s:\n", ui.LabelStyle.Render("In"), ui.BrandStyle.Render(sourceName), ui.BrandStyle.Render(targetName))
 		if len(diff.Added) > 0 {
-			var keys []string
 			for _, k := range diff.Added {
-				keys = append(keys, ui.BrandStyle.Render(k))
+				fmt.Printf("    %s\n", ui.SuccessStyle.Render(k))
 			}
-			fmt.Printf("  %s  %s\n", strings.TrimSpace(ui.SuccessStyle.Render("LOCAL ONLY:")), strings.Join(keys, ", "))
+		} else {
+			fmt.Printf("    %s\n", ui.DimStyle.Render("(none)"))
 		}
+
+		fmt.Printf("\n  %s %s but missing in %s:\n", ui.LabelStyle.Render("In"), ui.BrandStyle.Render(targetName), ui.BrandStyle.Render(sourceName))
 		if len(diff.Removed) > 0 {
-			var keys []string
 			for _, k := range diff.Removed {
-				keys = append(keys, ui.BrandStyle.Render(k))
+				fmt.Printf("    %s\n", ui.ErrorStyle.Render(k))
 			}
-			fmt.Printf("  %s %s\n", strings.TrimSpace(ui.ErrorStyle.Render("REMOTE ONLY:")), strings.Join(keys, ", "))
+		} else {
+			fmt.Printf("    %s\n", ui.DimStyle.Render("(none)"))
+		}
+
+		if len(diff.Changed) > 0 {
+			fmt.Printf("\n  %s %s but values differ:\n", ui.LabelStyle.Render("In"), ui.BrandStyle.Render("both"))
+			for k := range diff.Changed {
+				fmt.Printf("    %s\n", ui.WarningStyle.Render(k))
+			}
+		}
+
+		if len(diff.Unchanged) > 0 {
+			fmt.Printf("\n  %s %s and identical:\n", ui.LabelStyle.Render("In"), ui.BrandStyle.Render("both"))
+			for _, k := range diff.Unchanged {
+				fmt.Printf("    %s\n", ui.DimStyle.Render(k))
+			}
 		}
 		fmt.Println()
 	}
@@ -456,11 +585,23 @@ func runSecretsDiff(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  %s  %s\n", strings.TrimSpace(ui.SuccessStyle.Render("LOCAL ONLY:")), strings.Join(localOnlyAllowlist, ", "))
 		}
 		fmt.Println()
-		fmt.Printf("Run %s to sync both.\n\n", ui.BrandStyle.Render("agentsecrets secrets pull"))
-	} else if len(diff.Added) > 0 || len(diff.Removed) > 0 || len(diff.Changed) > 0 {
-		fmt.Printf("Run %s to sync both.\n\n", ui.BrandStyle.Render("agentsecrets secrets pull"))
 	}
+	if len(diff.Added) > 0 {
+		fmt.Printf("Run %s to upload local changes.\n", ui.BrandStyle.Render("agentsecrets secrets push"))
+	}
+	if len(diff.Removed) > 0 || len(diff.Changed) > 0 || allowlistDrift {
+		fmt.Printf("Run %s to sync from cloud.\n", ui.BrandStyle.Render("agentsecrets secrets pull"))
+	}
+	fmt.Println()
 
 	return nil
 }
 
+
+// upperFirst capitalises the first letter of a string.
+func upperFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}

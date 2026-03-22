@@ -1,3 +1,4 @@
+// Package agents handles agent identity registration, token issuance, and lifecycle management.
 package agents
 
 import (
@@ -35,6 +36,7 @@ type RegisterRequest struct {
 	Name        string `json:"name"`
 	WorkspaceID string `json:"-"` // used for routing, not sent in body
 	ProjectID   string `json:"project_id,omitempty"`
+	Environment string `json:"environment,omitempty"` // development, staging, production
 	Label       string `json:"label,omitempty"`
 	ExpiresIn   string `json:"expires_in,omitempty"` // e.g., "30d"
 }
@@ -49,8 +51,9 @@ type RegisterResponse struct {
 
 // IssueTokenRequest holds data to issue a new token.
 type IssueTokenRequest struct {
-	Label     string `json:"label,omitempty"`
-	ExpiresIn string `json:"expires_in,omitempty"`
+	Environment string `json:"environment,omitempty"`
+	Label       string `json:"label,omitempty"`
+	ExpiresIn   string `json:"expires_in,omitempty"`
 }
 
 // IssueTokenResponse is returned when issuing a new token.
@@ -85,7 +88,7 @@ func (s *Service) Register(req RegisterRequest) (*RegisterResponse, error) {
 		urlParams["project_id"] = req.ProjectID
 	}
 
-	resp, err := s.client.Call(endpointKey, "POST", req, urlParams)
+	resp, err := s.client.Call(endpointKey, "POST", req, urlParams, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register agent request: %w", err)
 	}
@@ -117,7 +120,7 @@ func (s *Service) List(workspaceID, projectID string) ([]Agent, error) {
 		urlParams["project_id"] = projectID
 	}
 
-	resp, err := s.client.Call(endpointKey, "GET", nil, urlParams)
+	resp, err := s.client.Call(endpointKey, "GET", nil, urlParams, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agents: %w", err)
 	}
@@ -155,7 +158,7 @@ func (s *Service) TokenIssue(workspaceID, registrationID string, req IssueTokenR
 	resp, err := s.client.Call("agents.token_issue", "POST", req, map[string]string{
 		"workspace_id":    workspaceID,
 		"registration_id": registrationID,
-	})
+	}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to issue token request: %w", err)
 	}
@@ -179,7 +182,7 @@ func (s *Service) TokenList(workspaceID, registrationID string) ([]Token, error)
 	resp, err := s.client.Call("agents.token_list", "GET", nil, map[string]string{
 		"workspace_id":    workspaceID,
 		"registration_id": registrationID,
-	})
+	}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tokens: %w", err)
 	}
@@ -204,7 +207,7 @@ func (s *Service) TokenRevoke(workspaceID, registrationID string, tokenID string
 		"workspace_id":    workspaceID,
 		"registration_id": registrationID,
 		"token_id":        tokenID,
-	})
+	}, nil)
 	if err != nil {
 		return fmt.Errorf("failed to revoke token: %w", err)
 	}
@@ -246,7 +249,7 @@ func (s *Service) Delete(workspaceID, registrationID string) error {
 	resp, err := s.client.Call("agents.delete", "DELETE", nil, map[string]string{
 		"workspace_id":    workspaceID,
 		"registration_id": registrationID,
-	})
+	}, nil)
 	if err != nil {
 		return fmt.Errorf("failed to delete agent registration: %w", err)
 	}

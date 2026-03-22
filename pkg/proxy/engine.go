@@ -15,6 +15,11 @@ import (
 	"github.com/The-17/agentsecrets/pkg/keyring"
 )
 
+// resolveEnvForAudit returns the current environment for audit logging.
+func resolveEnvForAudit() string {
+	return config.ResolveEnvironment()
+}
+
 func redactSecretFromResponse(body []byte, secretValue string) []byte {
 	if secretValue == "" {
 		return body
@@ -92,7 +97,7 @@ func NewEngine(projectID string) (*Engine, error) {
 			Timeout: DefaultTimeout,
 		},
 		ResolveSecret: func(key string) (string, error) {
-			return keyring.GetSecret(projectID, key)
+			return keyring.GetSecret(projectID, resolveEnvForAudit(), key)
 		},
 	}, nil
 }
@@ -138,6 +143,7 @@ func (e *Engine) Execute(req CallRequest) (*CallResult, error) {
 		if e.Audit != nil {
 			_ = e.Audit.Log(AuditEvent{
 				Timestamp:      time.Now().UTC(),
+				Environment:    resolveEnvForAudit(),
 				SecretKeys:     secretKeys,
 				AgentID:        req.AgentID,
 				IdentityLevel:  req.IdentityLevel,
@@ -208,7 +214,7 @@ func (e *Engine) Execute(req CallRequest) (*CallResult, error) {
 	for _, inj := range req.Injections {
 		cred, err := e.ResolveSecret(inj.SecretKey)
 		if err != nil {
-			return nil, fmt.Errorf("secret '%s' not found in keychain — use list_secrets to see available keys, or add it with 'agentsecrets secrets set %s=VALUE'", inj.SecretKey, inj.SecretKey)
+			return nil, fmt.Errorf("secret '%s' not found in keychain — run 'agentsecrets secrets list' to see available keys, or add it with 'agentsecrets secrets set %s=VALUE'", inj.SecretKey, inj.SecretKey)
 		}
 
 		if err := Inject(outbound, cred, inj); err != nil {
@@ -257,6 +263,7 @@ func (e *Engine) Execute(req CallRequest) (*CallResult, error) {
 	if e.Audit != nil {
 		_ = e.Audit.Log(AuditEvent{
 			Timestamp:      time.Now().UTC(),
+			Environment:    resolveEnvForAudit(),
 			SecretKeys:     secretKeys,
 			AgentID:        req.AgentID,
 			IdentityLevel:  req.IdentityLevel,

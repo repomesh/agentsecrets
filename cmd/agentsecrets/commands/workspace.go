@@ -332,7 +332,7 @@ func getMemberUserID(workspaceID, email string) (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("User is not a member of this workspace.")
+	return "", fmt.Errorf("user is not a member of this workspace")
 }
 
 func runWorkspacePromote(_ *cobra.Command, args []string) error {
@@ -355,7 +355,7 @@ func runWorkspacePromote(_ *cobra.Command, args []string) error {
 		}
 		if err := workspaceService.UpdateRole(workspaceID, userID, "promote"); err != nil {
 			if strings.Contains(err.Error(), "403") {
-				return fmt.Errorf("Only admins can change member roles.")
+				return fmt.Errorf("only admins can change member roles")
 			}
 			return err
 		}
@@ -388,7 +388,7 @@ func runWorkspaceDemote(_ *cobra.Command, args []string) error {
 		}
 		if err := workspaceService.UpdateRole(workspaceID, userID, "demote"); err != nil {
 			if strings.Contains(err.Error(), "403") {
-				return fmt.Errorf("Only admins can change member roles.")
+				return fmt.Errorf("only admins can change member roles")
 			}
 			return err // Will display exactly the message from the API on 400
 		}

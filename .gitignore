@@ -71,3 +71,8 @@ proxy_spec.md
 code_review.md
 content/
 specs/
+
+# AgentSecrets environment files
+.env.development
+.env.staging
+.env.production

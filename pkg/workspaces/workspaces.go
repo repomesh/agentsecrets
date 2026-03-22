@@ -48,7 +48,7 @@ func (s *Service) Create(name string) error {
 	resp, err := s.API.Call("workspaces.create", "POST", map[string]any{
 		"name":                    name,
 		"encrypted_workspace_key": b64Enc(encryptedWsKey),
-	}, nil)
+	}, nil, nil)
 	if err != nil {
 		return fmt.Errorf("create workspace: API call failed: %w", err)
 	}
@@ -92,7 +92,7 @@ func (s *Service) Create(name string) error {
 // Invite adds a member to a workspace by encrypting the workspace key for them.
 func (s *Service) Invite(workspaceID, email, role string) error {
 	// Step 1: fetch the invitee's public key.
-	pubKeyResp, err := s.API.Call("users.public_key", "GET", nil, map[string]string{"email": email})
+	pubKeyResp, err := s.API.Call("users.public_key", "GET", nil, map[string]string{"email": email}, nil)
 	if err != nil {
 		return fmt.Errorf("invite: failed to get public key: %w", err)
 	}
@@ -143,7 +143,7 @@ func (s *Service) Invite(workspaceID, email, role string) error {
 		"role":                    role,
 		"encrypted_workspace_key": b64Enc(encKey),
 	}
-	inviteResp, err := s.API.Call("workspaces.invite", "POST", data, map[string]string{"workspace_id": workspaceID})
+	inviteResp, err := s.API.Call("workspaces.invite", "POST", data, map[string]string{"workspace_id": workspaceID}, nil)
 	if err != nil {
 		return fmt.Errorf("invite: API call failed: %w", err)
 	}
@@ -167,7 +167,7 @@ type WorkspaceMember struct {
 
 // Members lists all members of a workspace.
 func (s *Service) Members(workspaceID string) ([]WorkspaceMember, error) {
-	resp, err := s.API.Call("workspaces.members", "GET", nil, map[string]string{"workspace_id": workspaceID})
+	resp, err := s.API.Call("workspaces.members", "GET", nil, map[string]string{"workspace_id": workspaceID}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("members: API call failed: %w", err)
 	}
@@ -192,7 +192,7 @@ func (s *Service) RemoveMember(workspaceID, userID string) error {
 	resp, err := s.API.Call("workspaces.remove_member", "DELETE", nil, map[string]string{
 		"workspace_id": workspaceID,
 		"user_id":      userID,
-	})
+	}, nil)
 	if err != nil {
 		return fmt.Errorf("remove member: API call failed: %w", err)
 	}
@@ -212,7 +212,7 @@ func (s *Service) UpdateRole(workspaceID, userID, action string) error {
 	}, map[string]string{
 		"workspace_id": workspaceID,
 		"user_id":      userID,
-	})
+	}, nil)
 	if err != nil {
 		return fmt.Errorf("update role: API call failed: %w", err)
 	}
@@ -233,7 +233,7 @@ func (s *Service) AddAllowlist(workspaceID string, domains ...string) error {
 		"domains": domains,
 	}, map[string]string{
 		"workspace_id": workspaceID,
-	})
+	}, nil)
 	if err != nil {
 		return fmt.Errorf("add allowlist: API call failed: %w", err)
 	}
@@ -251,7 +251,7 @@ func (s *Service) RemoveAllowlist(workspaceID, domain string) error {
 	resp, err := s.API.Call("workspaces.allowlist_remove", "DELETE", nil, map[string]string{
 		"workspace_id": workspaceID,
 		"domain":       domain,
-	})
+	}, nil)
 	if err != nil {
 		return fmt.Errorf("remove allowlist: API call failed: %w", err)
 	}
@@ -275,7 +275,7 @@ type AllowlistDomain struct {
 func (s *Service) ListAllowlist(workspaceID string) ([]AllowlistDomain, error) {
 	resp, err := s.API.Call("workspaces.allowlist_list", "GET", nil, map[string]string{
 		"workspace_id": workspaceID,
-	})
+	}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("list allowlist: API call failed: %w", err)
 	}
@@ -307,7 +307,7 @@ type AllowlistLogEntry struct {
 func (s *Service) LogAllowlist(workspaceID string) ([]AllowlistLogEntry, error) {
 	resp, err := s.API.Call("workspaces.allowlist_log", "GET", nil, map[string]string{
 		"workspace_id": workspaceID,
-	})
+	}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("log allowlist: API call failed: %w", err)
 	}

@@ -132,7 +132,7 @@ func runAllowlistAdd(_ *cobra.Command, args []string) error {
 
 	cfg, _ := config.LoadGlobalConfig()
 	wsName := cfg.Workspaces[workspaceID].Name
-	ui.Success(fmt.Sprintf("✓ %s added to %s allowlist", strings.Join(domains, ", "), wsName))
+	ui.Success(fmt.Sprintf("%s added to %s allowlist", strings.Join(domains, ", "), wsName))
 	return nil
 }
 
@@ -170,7 +170,7 @@ func runAllowlistRemove(_ *cobra.Command, args []string) error {
 
 	cfg, _ := config.LoadGlobalConfig()
 	wsName := cfg.Workspaces[workspaceID].Name
-	ui.Success(fmt.Sprintf("✓ %s removed from %s allowlist", domain, wsName))
+	ui.Success(fmt.Sprintf("%s removed from %s allowlist", domain, wsName))
 	return nil
 }
 

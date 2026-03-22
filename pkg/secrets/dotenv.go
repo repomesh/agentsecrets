@@ -17,14 +17,23 @@ type EnvManager struct {
 	EnvExamplePath string
 }
 
-// NewEnvManager creates a manager for the current project.
+// NewEnvManager creates a manager for the current project using the resolved environment.
 func NewEnvManager() *EnvManager {
 	root, _ := config.GetProjectRoot()
 	if root == "" {
 		root = "."
 	}
+
+	env := config.ResolveEnvironment()
+	// Map "development" to ".env" for backward compatibility if desired
+	// We use .env for development as the primary default, but support others.
+	filename := ".env"
+	if env != "development" {
+		filename = fmt.Sprintf(".env.%s", env)
+	}
+
 	return &EnvManager{
-		EnvPath:        filepath.Join(root, ".env"),
+		EnvPath:        filepath.Join(root, filename),
 		EnvExamplePath: filepath.Join(root, ".env.example"),
 	}
 }
@@ -91,7 +100,7 @@ func (m *EnvManager) parseValue(val string) string {
 	return val
 }
 
-// Write merges the provided secrets into .env and updates .env.example.
+// Write merges the provided secrets into the environment-specific .env file.
 func (m *EnvManager) Write(newSecrets map[string]string) error {
 	mode := config.GetStorageMode()
 	if mode != 1 {
@@ -99,7 +108,12 @@ func (m *EnvManager) Write(newSecrets map[string]string) error {
 			return err
 		}
 	}
-	return m.updateFile(m.EnvExamplePath, newSecrets, true)
+	return nil
+}
+
+// WriteEnvExample overwrites the .env.example file with the exact provided content.
+func (m *EnvManager) WriteEnvExample(content string) error {
+	return os.WriteFile(m.EnvExamplePath, []byte(content), 0644)
 }
 
 // updateFile reads the existing file, updates existing keys, and appends new ones.
@@ -158,7 +172,7 @@ func (m *EnvManager) updateFile(path string, newSecrets map[string]string, keysO
 	return writeLines(path, lines)
 }
 
-// Delete removes a key from both files.
+// Delete removes a key from the environment file.
 func (m *EnvManager) Delete(key string) error {
 	mode := config.GetStorageMode()
 	if mode != 1 {
@@ -166,7 +180,7 @@ func (m *EnvManager) Delete(key string) error {
 			return err
 		}
 	}
-	return m.removeFromFile(m.EnvExamplePath, key)
+	return nil
 }
 
 func (m *EnvManager) removeFromFile(path string, keyToDelete string) error {

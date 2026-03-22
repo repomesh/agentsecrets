@@ -23,6 +23,7 @@ var (
 	proxyPort      int
 	logsSecretFlag string
 	logsLastFlag   int
+	logsEnvFlag    string
 )
 
 var proxyCmd = &cobra.Command{
@@ -68,6 +69,7 @@ func init() {
 
 	proxyLogsCmd.Flags().StringVar(&logsSecretFlag, "secret", "", "Filter logs by secret key name")
 	proxyLogsCmd.Flags().IntVar(&logsLastFlag, "last", 20, "Number of recent log entries to show")
+	proxyLogsCmd.Flags().StringVar(&logsEnvFlag, "env", "", "Filter logs by environment (development, staging, production)")
 
 	proxyCmd.AddCommand(proxyStartCmd)
 	proxyCmd.AddCommand(proxyStatusCmd)
@@ -368,9 +370,7 @@ func runProxyLogs(cmd *cobra.Command, args []string) error {
 
 	events, err := svc.QueryLocal(filter)
 	if err != nil {
-		ui.Info("No audit log found. The proxy hasn't been used yet.")
-		fmt.Println()
-		return nil
+		return fmt.Errorf("failed to query audit log: %w", err)
 	}
 
 	if len(events) == 0 {
@@ -396,11 +396,11 @@ func runProxyLogs(cmd *cobra.Command, args []string) error {
 		
 		statusStr := e.Status
 		if statusStr == "BLOCKED" {
-			statusStr = ui.ErrorStyle.Render("✗ BLOCK")
+			statusStr = ui.ErrorStyle.Render("x BLOCK")
 		} else if statusStr == "OK" {
-			statusStr = ui.SuccessStyle.Render("✓ OK")
+			statusStr = ui.SuccessStyle.Render("* OK")
 		} else {
-			statusStr = "✓ OK" // backward compat for old logs
+			statusStr = "* OK" // backward compat for old logs
 		}
 
 		reasonStr := e.Reason

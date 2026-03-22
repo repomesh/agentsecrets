@@ -61,7 +61,10 @@ var statusCmd = &cobra.Command{
 			ui.StatusRow("Selected Workspace:", wsDisplay)
 		}
 
-		// Project info
+		// Environment info
+		env, source := config.ResolveEnvironmentWithSource()
+		envDisplay := fmt.Sprintf("%s (from %s)", env, source)
+		ui.StatusRow("Environment:", envDisplay)
 		p, err := config.LoadProjectConfig()
 		if err == nil && p.ProjectName != "" {
 			workspaceName := p.WorkspaceName
@@ -80,7 +83,7 @@ var statusCmd = &cobra.Command{
 			// Sync info
 			secretsDisplay := "Unable to calculate"
 			if secretsService != nil {
-				diff, diffErr := secretsService.Diff()
+				diff, diffErr := secretsService.Diff("", "")
 				if diffErr != nil {
 					secretsDisplay = fmt.Sprintf("Could not check (%s)", diffErr.Error())
 				} else {

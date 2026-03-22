@@ -193,13 +193,16 @@ func fileDelete(email string) error {
 
 // --- Individual Secret Storage (for Proxy support) ---
 
-func secretKeyName(projectID, key string) string {
-	return fmt.Sprintf("Secret_%s_%s", projectID, key)
+func secretKeyName(projectID, environment, key string) string {
+	if environment == "" {
+		environment = "development" // fallback for older data
+	}
+	return fmt.Sprintf("%s:%s:%s", projectID, environment, key)
 }
 
-// SetSecret stores a decrypted secret in the keyring and updates the project's key index.
-func SetSecret(projectID, key, value string) error {
-	name := secretKeyName(projectID, key)
+// SetSecret stores a decrypted secret in the keyring and updates the project environment's key index.
+func SetSecret(projectID, environment, key, value string) error {
+	name := secretKeyName(projectID, environment, key)
 	if useFileBackend {
 		// Base64-encode before storing so fileGetKey's decode round-trips correctly.
 		encoded := base64.StdEncoding.EncodeToString([]byte(value))
@@ -211,38 +214,53 @@ func SetSecret(projectID, key, value string) error {
 			return fmt.Errorf("set secret %s: %w", name, err)
 		}
 	}
-	return addKeyToIndex(projectID, key)
+	return addKeyToIndex(projectID, environment, key)
 }
 
 // GetSecret retrieves a secret from the keyring.
-func GetSecret(projectID, key string) (string, error) {
-	name := secretKeyName(projectID, key)
-	if useFileBackend {
-		val, err := fileGetKey(name, "private")
-		if err != nil {
-			return "", fmt.Errorf("get secret: %w", err)
+func GetSecret(projectID, environment, key string) (string, error) {
+	name := secretKeyName(projectID, environment, key)
+	legacyName := fmt.Sprintf("Secret_%s_%s", projectID, key)
+
+	readKey := func(k string) (string, error) {
+		if useFileBackend {
+			val, err := fileGetKey(k, "private")
+			return string(val), err
 		}
-		return string(val), nil
+		return gokeyring.Get(serviceName, k)
 	}
 
-	val, err := gokeyring.Get(serviceName, name)
-	if err != nil {
-		return "", fmt.Errorf("get secret: %w", err)
+	if val, err := readKey(name); err == nil {
+		return val, nil
 	}
-	return val, nil
+	
+	if environment == "development" || environment == "" {
+		if val, err := readKey(legacyName); err == nil {
+			return val, nil
+		}
+	}
+	return "", fmt.Errorf("secret %q not found in keychain — run 'agentsecrets secrets pull' to sync from cloud", key)
 }
 
 // DeleteSecret removes a secret from the keyring and its index.
-func DeleteSecret(projectID, key string) error {
-	name := secretKeyName(projectID, key)
-	if useFileBackend {
-		if err := fileDelete(name); err != nil {
-			return err
+func DeleteSecret(projectID, environment, key string) error {
+	name := secretKeyName(projectID, environment, key)
+	legacyName := fmt.Sprintf("Secret_%s_%s", projectID, key)
+
+	deleteKey := func(k string) {
+		if useFileBackend {
+			_ = fileDelete(k)
+		} else {
+			_ = gokeyring.Delete(serviceName, k)
 		}
-	} else {
-		_ = gokeyring.Delete(serviceName, name)
 	}
-	return removeKeyFromIndex(projectID, key)
+
+	deleteKey(name)
+	if environment == "development" || environment == "" {
+		deleteKey(legacyName)
+	}
+
+	return removeKeyFromIndex(projectID, environment, key)
 }
 
 // --- Key Index Management ---
@@ -304,32 +322,51 @@ func GetWorkspaceAllowlist(workspaceID string) ([]string, error) {
 	return domains, nil
 }
 
-func projectIndexName(projectID string) string {
-	return fmt.Sprintf("ProjectKeys_%s", projectID)
+func projectIndexName(projectID, environment string) string {
+	if environment == "" {
+		environment = "development"
+	}
+	return fmt.Sprintf("ProjectKeys_%s_%s", projectID, environment)
 }
 
-func getProjectKeys(projectID string) []string {
-	var val string
-	name := projectIndexName(projectID)
+func getProjectKeys(projectID, environment string) []string {
+	name := projectIndexName(projectID, environment)
+	legacyName := fmt.Sprintf("ProjectKeys_%s", projectID)
+	
+	var keys []string
+	keyMap := make(map[string]bool)
 
-	if useFileBackend {
-		if v, err := fileGetKey(name, "private"); err == nil {
-			val = string(v)
+	readKeys := func(keyName string) {
+		var val string
+		if useFileBackend {
+			if v, err := fileGetKey(keyName, "private"); err == nil {
+				val = string(v)
+			}
+		} else {
+			if v, err := gokeyring.Get(serviceName, keyName); err == nil {
+				val = v
+			}
 		}
-	} else {
-		if v, err := gokeyring.Get(serviceName, name); err == nil {
-			val = v
+		if val != "" {
+			for _, k := range strings.Split(val, ",") {
+				if !keyMap[k] {
+					keys = append(keys, k)
+					keyMap[k] = true
+				}
+			}
 		}
 	}
 
-	if val == "" {
-		return []string{}
+	readKeys(name)
+	if environment == "development" || environment == "" {
+		readKeys(legacyName)
 	}
-	return strings.Split(val, ",")
+
+	return keys
 }
 
-func saveProjectKeys(projectID string, keys []string) error {
-	name := projectIndexName(projectID)
+func saveProjectKeys(projectID, environment string, keys []string) error {
+	name := projectIndexName(projectID, environment)
 	val := strings.Join(keys, ",")
 
 	if useFileBackend {
@@ -339,35 +376,35 @@ func saveProjectKeys(projectID string, keys []string) error {
 	return gokeyring.Set(serviceName, name, val)
 }
 
-func addKeyToIndex(projectID, key string) error {
-	keys := getProjectKeys(projectID)
+func addKeyToIndex(projectID, environment, key string) error {
+	keys := getProjectKeys(projectID, environment)
 	for _, k := range keys {
 		if k == key {
 			return nil // Already exists
 		}
 	}
 	keys = append(keys, key)
-	return saveProjectKeys(projectID, keys)
+	return saveProjectKeys(projectID, environment, keys)
 }
 
-func removeKeyFromIndex(projectID, key string) error {
-	keys := getProjectKeys(projectID)
+func removeKeyFromIndex(projectID, environment, key string) error {
+	keys := getProjectKeys(projectID, environment)
 	var newKeys []string
 	for _, k := range keys {
 		if k != key {
 			newKeys = append(newKeys, k)
 		}
 	}
-	return saveProjectKeys(projectID, newKeys)
+	return saveProjectKeys(projectID, environment, newKeys)
 }
 
-// GetAllProjectSecrets returns all secrets mapped for a specific project from the keyring.
-func GetAllProjectSecrets(projectID string) (map[string]string, error) {
-	keys := getProjectKeys(projectID)
+// GetAllProjectSecrets returns all secrets mapped for a specific project and environment from the keyring.
+func GetAllProjectSecrets(projectID, environment string) (map[string]string, error) {
+	keys := getProjectKeys(projectID, environment)
 	res := make(map[string]string)
 
 	for _, k := range keys {
-		if val, err := GetSecret(projectID, k); err == nil {
+		if val, err := GetSecret(projectID, environment, k); err == nil {
 			res[k] = val
 		}
 	}

@@ -54,7 +54,7 @@ func TestAPIClient(t *testing.T) {
 	client.BaseURL = server.URL // Override for test
 
 	// 3. Test simple POST (login is a public endpoint)
-	resp, err := client.Call("auth.login", "POST", map[string]string{"email": "t@t.com"}, nil)
+	resp, err := client.Call("auth.login", "POST", map[string]string{"email": "t@t.com"}, nil, nil)
 	if err != nil {
 		t.Fatalf("Call failed: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestAPIClient(t *testing.T) {
 
 	// 4. Test POST with body (requires token)
 	data := map[string]string{"name": "New Workspace"}
-	resp, err = client.Call("workspaces.create", "POST", data, nil)
+	resp, err = client.Call("workspaces.create", "POST", data, nil, nil)
 	if err != nil {
 		t.Fatalf("POST failed: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestAPIClient(t *testing.T) {
 	// 5. Test Unauthorized (empty token on non-public endpoint)
 	unauthClient := NewClient(func() string { return "" })
 	unauthClient.BaseURL = server.URL
-	resp, err = unauthClient.Call("workspaces.list", "GET", nil, nil)
+	resp, err = unauthClient.Call("workspaces.list", "GET", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Unauth call failed: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestAPIParams(t *testing.T) {
 	client.BaseURL = server.URL
 
 	// Test URL param insertion
-	resp, err := client.Call("workspaces.members", "GET", nil, map[string]string{"workspace_id": "ws-123"})
+	resp, err := client.Call("workspaces.members", "GET", nil, map[string]string{"workspace_id": "ws-123"}, nil)
 	if err != nil {
 		t.Fatalf("Call with params failed: %v", err)
 	}

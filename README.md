@@ -21,7 +21,7 @@ Your agent checks its own status, notices a secret is out of sync, pulls the lat
 ```bash
 # An AI agent managing its own secrets workflow autonomously
 
-agentsecrets status               # what workspace, project, last sync?
+agentsecrets status               # what workspace, project, environment, last sync?
 agentsecrets secrets diff         # anything out of sync?
 agentsecrets secrets pull         # sync from cloud to keychain
 agentsecrets secrets list         # what keys are available?
@@ -133,6 +133,7 @@ agentsecrets status
 # Logged in as: steppa@theseventeen.co
 # Workspace:    Acme Engineering
 # Project:      payments-service
+# Environment:  development
 # Last pull:    2 minutes ago
 ```
 
@@ -203,7 +204,7 @@ Allowlist modifications require admin role and password verification. Non-admins
 
 ```bash
 agentsecrets proxy logs --last 5
-# 14:23:01  ✓ OK (REDACTED)  GET  httpbin.org/headers  STRIPE_KEY  bearer  200  credential_echo  245ms
+# 14:23:01  * OK (REDACTED)  GET  httpbin.org/headers  STRIPE_KEY  bearer  200  credential_echo  245ms
 ```
 
 ### Role Management
@@ -387,6 +388,7 @@ You pass a key name. The SDK resolves from the OS keychain, injects at the trans
 **Built on the SDK:**
 - [Zero-Knowledge MCP Server Template](https://github.com/The-17/zero-knowledge-mcp) — scaffold for building MCP servers with zero credential storage
 - [AgentSecrets for LangChain](https://github.com/The-17/agentsecrets-langchain) — zero-knowledge API calls in any LangChain agent *(coming soon)*
+- [AgentSecrets JS SDK](https://github.com/The-17/agentsecrets-js-sdk) — JavaScript/Node.js SDK *(coming soon)*
 
 ---
 
@@ -397,7 +399,7 @@ You pass a key name. The SDK resolves from the OS keychain, injects at the trans
 agentsecrets init                    # Set up account or initialise a new project
 agentsecrets login                   # Login to existing account
 agentsecrets logout                  # Clear session
-agentsecrets status                  # Current user, workspace, project, last sync
+agentsecrets status                  # Current user, workspace, project, environment, last sync
 ```
 
 ### Workspaces
@@ -405,7 +407,7 @@ agentsecrets status                  # Current user, workspace, project, last sy
 agentsecrets workspace create "The Seventeen"       # Create workspace
 agentsecrets workspace list                         # List workspaces
 agentsecrets workspace switch "The Seventeen"       # Switch active workspace
-agentsecrets workspace invite [EMAIL_ADDRESS]            # Invite teammate
+agentsecrets workspace invite [EMAIL_ADDRESS]       # Invite teammate
 ```
 
 ### Projects
@@ -417,15 +419,25 @@ agentsecrets project update my-app        # Update project
 agentsecrets project delete my-app        # Delete project
 ```
 
+### Environments
+```bash
+agentsecrets environment switch <name>        # Switch active environment (development, staging, production)
+agentsecrets environment list                 # List all environments and secret counts
+agentsecrets environment copy <from> <to>     # Copy all secrets from one env to another
+agentsecrets environment merge <from> <to>    # Merge secrets and prompt for new values
+agentsecrets environment clean                # Delete all secrets in current environment
+```
+
 ### Secrets
 ```bash
 agentsecrets secrets set KEY=value        # Store a secret
-agentsecrets secrets get KEY              # Retrieve a value
+agentsecrets secrets get KEY              # Retrieve a value (you see it, agent doesn't)
 agentsecrets secrets list                 # List key names — never values
 agentsecrets secrets push                 # Upload .env to cloud (encrypted)
 agentsecrets secrets pull                 # Download cloud secrets to keychain
 agentsecrets secrets delete KEY           # Remove a secret
-agentsecrets secrets diff                 # Compare local vs cloud
+agentsecrets secrets diff                 # Compare local vs cloud active environment
+agentsecrets secrets diff --from X --to Y # Compare two environments directly
 ```
 
 ### Proxy & Calls
@@ -485,6 +497,7 @@ agentsecrets workspace demote user@email.com               # Revoke admin role
 | **Domain allowlist enforcement** | ✅ Deny-by-default | ❌ | ❌ | ❌ | ❌ |
 | **Response body redaction** | ✅ Echo exfiltration defense | ❌ | ❌ | ❌ | ❌ |
 | **Prompt injection protection** | ✅ Structural | ❌ | ❌ | ❌ | ❌ |
+| **Environment support (dev/staging/prod)** | ✅ Built-in | ⚠️ Manual | ⚠️ Manual | ✅ | ⚠️ Manual |
 | **Env var injection (`run --`)** | ✅ `agentsecrets env` | ❌ | ❌ | ✅ `doppler run` | ✅ `op run` |
 | **SDK for building on top** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **AI-native workflow** | ✅ Built for it | ❌ | ❌ | ❌ | ❌ |
@@ -517,12 +530,12 @@ agentsecrets secrets pull
 ### Autonomous Agent Deployment
 ```bash
 # Agent handles this entire flow without human intervention
-agentsecrets secrets diff          # checks for drift
-agentsecrets secrets pull          # syncs if needed
-agentsecrets workspace switch production
-agentsecrets secrets pull
+agentsecrets secrets diff                    # checks for drift
+agentsecrets secrets pull                    # syncs if needed
+agentsecrets environment switch production   # switch to production environment
+agentsecrets secrets pull                    # pull production secrets
 npm run deploy
-agentsecrets proxy logs            # audits what happened
+agentsecrets proxy logs                      # audits what happened
 ```
 
 ### Incident Response at 2am
@@ -571,10 +584,11 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md) and [PROXY.md](docs/PROXY.md) for de
 - [x] Zero-Knowledge MCP Server Template
 - [x] Agent identity + token management
 - [x] Governance audit log
+- [x] Environment support (development / staging / production)
 - [ ] AgentSecrets for LangChain
 - [ ] AgentSecrets for CrewAI
+- [ ] JavaScript / Node.js SDK
 - [ ] Secret rotation
-- [ ] Environment support (dev/staging/prod)
 - [ ] Web dashboard
 - [ ] Cloud resolver (serverless + production deployments)
 - [ ] AgentSecrets Connect (multi-tenant credential delegation)
