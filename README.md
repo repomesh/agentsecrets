@@ -1,88 +1,137 @@
 # AgentSecrets
 
-> **Zero-knowledge secrets infrastructure built for AI agents to operate, not just consume.**
-
-Every other secrets tool was built for humans to provision credentials to agents. AgentSecrets was built for agents to manage credentials themselves — without ever seeing a single value.
+> Zero-knowledge AI Agent Secrets Management: secure API keys for AI agents without exposing credential values at runtime. Store, sync, inject, audit, and build on top of credentials your agents can use but never see.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://go.dev/)
+[![Stars](https://img.shields.io/github/stars/The-17/agentsecrets?style=flat)](https://github.com/The-17/agentsecrets/stargazers)
 [![ClawHub](https://img.shields.io/badge/ClawHub-agentsecrets-blue)](https://clawhub.ai/SteppaCodes/agentsecrets)
 
-**[Official Website](https://agentsecrets.theseventeen.co)** | **[Engineering Blog Series](https://engineering.theseventeen.co/series/building-agentsecrets)**
+**[Website](https://agentsecrets.theseventeen.co)** | **[Docs](https://agentsecrets.theseventeen.co/docs)** | **[Engineering Blog](https://engineering.theseventeen.co/series/building-agentsecrets)**
 
 ---
 
-## What This Is
+AgentSecrets is the complete secrets management and credential infrastructure for the AI agent era. It covers secrets storage, zero-knowledge cloud sync, environment management, team workspaces, agent identity, audit logging, transport-layer credential injection, and an SDK for building on top, all without a credential value ever entering agent context., the agent sees only the API response. At no step does the agent hold, see, or have access to the actual credential value. The zero-knowledge guarantee is architectural, not policy-based. It is built into how the system works at every layer.
 
-Most secrets tools treat AI agents as consumers, something that receives a credential and uses it. AgentSecrets treats the agent as an operator.
+---
 
-Your agent checks its own status, notices a secret is out of sync, pulls the latest from the cloud, makes the authenticated API call, and audits what it did. All of this without ever knowing a single credential value.
+## Contents
+
+- [Why the Architecture Matters](#why-the-architecture-matters)
+- [What AgentSecrets Is](#what-agentsecrets-is)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [The Agent Workflow](#the-agent-workflow)
+- [Environments](#environments)
+- [Team Workspaces](#team-workspaces)
+- [Agent Identity](#agent-identity)
+- [6 Auth Injection Styles](#6-auth-injection-styles)
+- [Zero-Trust Proxy Security](#zero-trust-proxy-security)
+- [Encryption Model](#encryption-model)
+- [AI Tool Integrations](#ai-tool-integrations)
+- [Build on AgentSecrets](#build-on-agentsecrets)
+- [Full Command Reference](#full-command-reference)
+- [Roadmap](#roadmap)
+- [Security](#security)
+- [Contributing](#contributing)
+
+---
+
+> **Package rename notice**
+> The `agentsecrets` PyPI package is now the [AgentSecrets SDK](https://github.com/The-17/agentsecrets-sdk): for developers building tools and agents on AgentSecrets infrastructure. The CLI wrapper is now `agentsecrets-cli`. The `agentsecrets` command itself is unchanged.
+
+---
+
+## The Critical Difference
+
+There are two fundamentally different approaches to secrets management for AI agents.
+
+**Runtime retrieval (the common pattern)**
+
+The agent fetches or leases a credential at runtime. The value enters agent memory.
 
 ```bash
-# An AI agent managing its own secrets workflow autonomously
-
-agentsecrets status               # what workspace, project, environment, last sync?
-agentsecrets secrets diff         # anything out of sync?
-agentsecrets secrets pull         # sync from cloud to keychain
-agentsecrets secrets list         # what keys are available?
-agentsecrets call \
-  --url https://api.stripe.com/v1/balance \
-  --bearer STRIPE_KEY             # make the authenticated call
-agentsecrets proxy logs           # audit what just happened
+export TOKEN=$(secrets lease github_token)
+# The agent now holds sk_live_51H... in memory
 ```
 
-The agent ran the entire credentials workflow. It never saw `sk_live_51H...`. Not at any step.
+Once the value enters agent context, it can be extracted via prompt injection, exposed in logs or traces, and accessed by tools, plugins, or any dependency running in the same process.
 
-This is what it means to be built for the agentic era — not bolted onto it.
+**Zero-knowledge injection (AgentSecrets)**
+
+The agent references a key name. The value is resolved outside the agent and injected at the transport layer.
+
+```bash
+agentsecrets call --bearer GITHUB_TOKEN
+# The agent referenced a name. It never received a value.
+```
+
+If a system gives an AI agent access to a credential value, it must accept that the value can be leaked. AgentSecrets removes that assumption entirely.
 
 ---
 
-## The Problem With Every Other Approach
+## Why the Architecture Matters
 
-Traditional vaults protect credentials at rest. Once an agent retrieves a key to use it, that key is in agent memory. That's where it gets vulnerable.
-
-```
-Vault → agent retrieves sk_live_51H... → key is in agent memory
-                                        → prompt injection can reach it
-                                        → malicious plugin can reach it  
-                                        → CVE can expose it
-```
-
-AgentSecrets never puts the value in agent memory. The proxy resolves from the OS keychain and injects at the transport layer. The agent makes the call. It sees only the response.
+Most approaches to AI agent credential security follow the same pattern: store secrets securely, then retrieve and inject them at runtime.
 
 ```
-AgentSecrets → agent says "use STRIPE_KEY" → proxy resolves from OS keychain
-                                           → injects into HTTP request
-                                           → returns API response only
-                                           → value never entered agent context
+Secure store → agent retrieves sk_live_51H... → value enters agent memory
+                                               → prompt injection can reach it
+                                               → malicious plugin can read it
+                                               → CVE exposes it
+                                               → LLM trace captures it
 ```
 
-You cannot steal what was never there.
+Whether the store is a .env file, HashiCorp Vault, AWS Secrets Manager, or a leasing system, if the agent retrieves the value, the value is in agent context. That is the moment of exposure.
+
+AgentSecrets eliminates that moment entirely.
+
+```
+OS keychain → proxy resolves in memory → value injected at transport layer
+                                       → agent receives API response only
+                                       → value never entered agent context
+                                       → nothing to steal, log, or extract
+```
+
+The agent never retrieves the value. It cannot be prompted to reveal it. It cannot be logged. It cannot be stolen through a plugin or CVE. It was structurally absent from every place an attack would look.
+
+---
+
+## What AgentSecrets Is
+
+**Credential proxy:** six auth injection styles, domain allowlist enforcement, response body redaction, SSRF protection, session token authentication.
+
+**Zero-knowledge cloud sync:** X25519 key exchange, AES-256-GCM encryption, Argon2id key derivation. The server stores ciphertext it structurally cannot decrypt. The workspace key lives in the OS keychain and never reaches the server.
+
+**Environment support:** development, staging, and production as first-class concepts. One command switches the active environment. The proxy resolves the right credentials automatically. Cross-environment diff shows coverage gaps.
+
+**Team workspaces:** secrets encrypted client-side before upload. New developers onboard by pulling from the workspace. No .env files shared over Slack, no credential spreadsheets, no production keys in Slack DMs.
+
+**Agent identity:** three levels: anonymous, declared, and cryptographically issued. Every proxy call is logged against the agent that made it. Tokens can be revoked per agent without touching anything else.
+
+**Governance audit log:** every call logged with key name, endpoint, environment, agent identity, status, and the domain allowlist state at the exact moment of execution. No value field exists in the schema.
+
+**SDK:** build tools, MCP servers, and AI agents where credential values never enter your code or the code of anyone using what you build.
+
+**MCP integration:** first-class MCP server for Claude Desktop and Cursor. No credential values in any config file.
+
+**Environment variable injection:** `agentsecrets env -- <command>` wraps any process and injects secrets from the OS keychain at spawn time. Nothing written to disk.
 
 ---
 
 ## Installation
 
-**Homebrew (macOS / Linux):**
 ```bash
+# Homebrew (macOS / Linux)
 brew install The-17/tap/agentsecrets
-```
 
-**npm / npx:**
-```bash
+# npm
 npm install -g @the-17/agentsecrets
-# or without installing
-npx @the-17/agentsecrets init
-```
 
-
-**pip:**
-```bash
+# pip
 pip install agentsecrets-cli
-```
 
-**Go:**
-```bash
+# Go
 go install github.com/The-17/agentsecrets/cmd/agentsecrets@latest
 ```
 
@@ -91,161 +140,86 @@ go install github.com/The-17/agentsecrets/cmd/agentsecrets@latest
 ## Quick Start
 
 ```bash
-# Set up your account (first time) or initialise a new project (returning user)
 agentsecrets init
 
-# Create a project
-agentsecrets project create my-app
+agentsecrets project create my-agent
 
-# Store credentials — values go to OS keychain, never to disk
 agentsecrets secrets set STRIPE_KEY=sk_live_51H...
 agentsecrets secrets set OPENAI_KEY=sk-proj-...
-agentsecrets secrets set DATABASE_URL=postgresql://...
 
-# Or push your existing .env all at once
-agentsecrets secrets push
-
-# Authorize the domains your agents can reach
 agentsecrets workspace allowlist add api.stripe.com api.openai.com
 
-# Connect your AI tool
-npx @the-17/agentsecrets mcp install   # Claude Desktop + Cursor
-agentsecrets proxy start               # Any agent via HTTP
-openclaw skill install agentsecrets    # OpenClaw
-
-# Or inject secrets as env vars into any process
-agentsecrets env -- stripe mcp
-agentsecrets env -- node server.js
-agentsecrets env -- npm run dev
+agentsecrets mcp install        # Claude Desktop + Cursor
+agentsecrets proxy start        # any agent via HTTP proxy
 ```
-
-Your agent now has full API access. It will never see a credential value.
 
 ---
 
 ## The Agent Workflow
 
-This is what AgentSecrets looks like when an AI agent is operating it end to end.
+This is what AgentSecrets looks like when an AI agent operates the full credentials lifecycle autonomously.
 
-### Check status
 ```bash
 agentsecrets status
-# Logged in as: steppa@theseventeen.co
 # Workspace:    Acme Engineering
 # Project:      payments-service
-# Environment:  development
+# Environment:  production
 # Last pull:    2 minutes ago
-```
 
-### Notice drift and sync
-```bash
 agentsecrets secrets diff
-# LOCAL ONLY:  PAYSTACK_KEY
-# REMOTE ONLY: SENDGRID_KEY
 # OUT OF SYNC: STRIPE_KEY (remote is newer)
 
 agentsecrets secrets pull
-# Synced 3 secrets from cloud to OS keychain
-```
+# Synced 1 secret from cloud to OS keychain
 
-### Make authenticated calls
-```bash
-agentsecrets call --url https://api.stripe.com/v1/balance --bearer STRIPE_KEY
+agentsecrets call \
+  --url https://api.stripe.com/v1/balance \
+  --bearer STRIPE_KEY
 # {"object":"balance","available":[{"amount":420000,"currency":"usd"}]}
+
+agentsecrets proxy logs --last 5
+# 14:23:01  GET  api.stripe.com/v1/balance  STRIPE_KEY  200  245ms
 ```
 
-### Audit what happened
-```bash
-agentsecrets proxy logs --last 10
-# 14:23:01  GET  api.stripe.com/v1/balance   STRIPE_KEY  200  245ms
-# 14:31:15  POST api.stripe.com/v1/charges   STRIPE_KEY  200  412ms
-# 14:31:16  POST api.openai.com/v1/chat/...  OPENAI_KEY  200  1203ms
-```
-
-The agent managed the complete credentials lifecycle. No human touched the workflow. No credential value was exposed at any step.
+The agent managed the complete workflow. No credential value appeared at any step. The audit log has no value field because there was no value to log.
 
 ---
 
-## Zero-Knowledge Architecture
+## Environments
 
-AgentSecrets is zero-knowledge at every layer — not just at the point of API injection.
-
-| Step | What the agent sees |
-|---|---|
-| `secrets list` | Key names only |
-| `secrets diff` | Key names and sync status |
-| `secrets pull` | Confirmation message — values go to OS keychain |
-| `agentsecrets call` | API response only |
-| `agentsecrets env` | Injects values into child process — agent never sees them |
-| `proxy logs` | Key names, endpoints, status codes |
-
-The log struct has no value field. It is structurally impossible to accidentally log a credential value anywhere in the system.
-
-### Zero-Trust Proxy Enforcement
-
-AgentSecrets enforces a **deny-by-default** security posture on every proxied request.
-
-**Domain Allowlist:** Every outbound request must target a domain explicitly authorized in your workspace allowlist. If an agent attempts to hit an unauthorized domain, whether through prompt injection, SSRF, or misconfiguration, the proxy blocks the request with 403 Forbidden and logs the attempt.
+Every project has three built-in environments. One command switches the active context. The proxy, push, pull, and diff commands all respect the active environment automatically.
 
 ```bash
-# Authorize domains (supports multiple at once)
-agentsecrets workspace allowlist add api.stripe.com api.openai.com
+agentsecrets environment switch production
 
-# Review allowed domains
-agentsecrets workspace allowlist list
+agentsecrets environment list
+#   development   12 secrets
+#   staging        8 secrets
+#   production    12 secrets   ← active
 
-# View blocked attempts
-agentsecrets workspace allowlist log
+agentsecrets secrets diff --from development --to production
+# In development but missing in production:
+#   OPENAI_KEY
+#   DATABASE_URL
+
+agentsecrets environment merge staging production
+# Prompts for production values for each staging key
 ```
-
-Allowlist modifications require admin role and password verification. Non-admins cannot change what domains agents can reach.
-
-**Response Body Redaction:** If an external API echoes back the injected credential in its response body, the proxy automatically replaces the value with `[REDACTED_BY_AGENTSECRETS]` before the response reaches the agent. This prevents credential echo exfiltration — a class of attack where a malicious API is designed to reflect secrets back into agent context.
-
-```bash
-agentsecrets proxy logs --last 5
-# 14:23:01  * OK (REDACTED)  GET  httpbin.org/headers  STRIPE_KEY  bearer  200  credential_echo  245ms
-```
-
-### Role Management
-
-```bash
-agentsecrets workspace promote user@email.com   # Grant admin role
-agentsecrets workspace demote user@email.com    # Revoke admin role
-```
-
-### Encryption
-| Layer | Implementation |
-|---|---|
-| Key exchange | X25519 (NaCl SealedBox) |
-| Secret encryption | AES-256-GCM |
-| Key derivation | Argon2id |
-| Key storage | OS keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service) |
-| Transport | HTTPS / TLS |
-| Server | Stores encrypted blobs only — cannot decrypt |
-| Proxy | Session token, SSRF protection, redirect stripping |
 
 ---
 
 ## Team Workspaces
 
-AgentSecrets is built for teams. A workspace is a shared environment — teammates join and get access to projects within it. Secrets are encrypted client-side before upload. The server cannot decrypt them.
-
 ```bash
-# Create workspace
 agentsecrets workspace create "Acme Engineering"
-
-# Invite teammates
 agentsecrets workspace invite alice@acme.com
 agentsecrets workspace invite bob@acme.com
 
-# Partition by service
 agentsecrets project create payments-service
 agentsecrets project create auth-service
-agentsecrets project create data-pipeline
 ```
 
-**New developer onboards:**
+New developer onboards:
 ```bash
 agentsecrets login
 agentsecrets workspace switch "Acme Engineering"
@@ -254,29 +228,42 @@ agentsecrets secrets pull
 # Ready. No credential sharing. No .env files sent over Slack.
 ```
 
-Every AI agent every teammate runs has access to the credentials it needs. None of them ever see the values.
+---
+
+## Agent Identity
+
+```bash
+# Declared identity
+client = AgentSecrets(agent_id="billing-processor")
+
+# Issued identity, cryptographically verified on every call
+agentsecrets agent token issue "billing-processor"
+# → agt_ws01hxyz_4kR9mNpQ...
+client = AgentSecrets(agent_token="agt_ws01hxyz_...")
+
+# Audit by agent
+agentsecrets log list --agent billing-processor
+agentsecrets log list --identity anonymous   # find coverage gaps
+```
 
 ---
 
-## The Credential Proxy
-
-AgentSecrets runs a local HTTP proxy on `localhost:8765`. Agents send requests with injection headers. The proxy resolves from the OS keychain, injects into the outbound request, returns only the response.
-
-### 6 Auth Styles
+## 6 Auth Injection Styles
 
 ```bash
-# Bearer token (Stripe, OpenAI, GitHub, most modern APIs)
+# Bearer token
 agentsecrets call --url https://api.stripe.com/v1/balance --bearer STRIPE_KEY
 
-# Custom header (SendGrid, Twilio, API Gateway)
+# Custom header
 agentsecrets call --url https://api.sendgrid.com/v3/mail/send \
   --header X-Api-Key=SENDGRID_KEY
 
-# Query parameter (Google Maps, weather APIs)
-agentsecrets call --url "https://maps.googleapis.com/maps/api/geocode/json" \
-  --query key=GMAP_KEY
+# Query parameter
+agentsecrets call \
+  --url "https://maps.googleapis.com/maps/api/geocode/json?address=Lagos" \
+  --query key=GOOGLE_MAPS_KEY
 
-# Basic auth (Jira, legacy REST APIs)
+# Basic auth
 agentsecrets call --url https://jira.example.com/rest/api/2/issue \
   --basic JIRA_CREDS
 
@@ -291,15 +278,46 @@ agentsecrets call --url https://oauth.example.com/token \
 
 ---
 
-## AI Tool Integrations
+## Zero-Trust Proxy Security
 
-### Claude Desktop + Cursor (MCP)
+Every proxied request passes through four security layers before injection:
+
+**Domain allowlist:** deny-by-default. Every target domain must be explicitly authorized. Unauthorized domains are blocked before credential resolution, regardless of whether the request came from prompt injection, SSRF, or misconfiguration.
+
+**Response body redaction:** if an external API echoes the injected credential in its response, the proxy replaces it with `[REDACTED_BY_AGENTSECRETS]` before the response reaches the agent.
+
+**SSRF protection:** private IP ranges, localhost, and non-HTTPS targets are blocked at the proxy level.
+
+**Session token:** generated at proxy startup, required on every request. Blocks rogue processes on the same machine from using the proxy.
 
 ```bash
-npx @the-17/agentsecrets mcp install
+agentsecrets workspace allowlist add api.stripe.com api.openai.com
+agentsecrets workspace allowlist list
+agentsecrets workspace allowlist log   # view blocked attempts
 ```
 
-Auto-configures your MCP setup. No credential values in any config file.
+---
+
+## Encryption Model
+
+| Layer | Implementation |
+|---|---|
+| Key exchange | X25519 (NaCl SealedBox) |
+| Secret encryption | AES-256-GCM |
+| Key derivation | Argon2id |
+| Key storage | OS keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service) |
+| Transport | HTTPS / TLS |
+| Server | Stores ciphertext only, structurally cannot decrypt |
+
+---
+
+## AI Tool Integrations
+
+### Claude Desktop + Cursor
+
+```bash
+agentsecrets mcp install
+```
 
 ```json
 {
@@ -312,61 +330,40 @@ Auto-configures your MCP setup. No credential values in any config file.
 }
 ```
 
-### OpenClaw (Skill + Exec Provider)
+### OpenClaw
 
 ```bash
 openclaw skill install agentsecrets
 ```
 
-AgentSecrets ships as both a ClawHub skill and a native exec provider for OpenClaw's SecretRef system (shipped in v2026.2.26). The agent manages the full secrets workflow autonomously within OpenClaw.
-
-### Any AI Assistant (Workflow File)
-
-`agentsecrets init` creates `.agent/workflows/agentsecrets.md` — a workflow file that teaches any AI assistant how to use AgentSecrets automatically. Claude, Gemini, Copilot, or any tool that reads workflow files picks it up without configuration.
+Native exec provider for OpenClaw's SecretRef system. Credentials resolve at execution time through the AgentSecrets binary. Nothing in any OpenClaw config file.
 
 ### Environment Variable Injection
 
-For tools that manage their own credential storage (Stripe CLI) or SDKs that read from environment variables:
-
 ```bash
-# Wrap any command — secrets injected as env vars
 agentsecrets env -- stripe mcp
 agentsecrets env -- node server.js
+agentsecrets env -- python manage.py runserver
 agentsecrets env -- npm run dev
 ```
 
-Values exist only in the child process memory. Nothing is written to disk. When the process exits, the secrets are gone.
+Values injected into child process memory at spawn time. Nothing written to disk. Gone when the process exits.
 
-**Claude Desktop config (wrapping native Stripe MCP):**
-
-```json
-{
-  "mcpServers": {
-    "stripe": {
-      "command": "agentsecrets",
-      "args": ["env", "--", "stripe", "mcp"]
-    }
-  }
-}
-```
-
-### HTTP Proxy (Any Agent or Framework)
+### HTTP Proxy
 
 ```bash
 agentsecrets proxy start
 
 curl http://localhost:8765/proxy \
-  -H "X-AS-Target-URL: https://api.stripe.com/v1/charges" \
+  -H "X-AS-Target-URL: https://api.stripe.com/v1/balance" \
   -H "X-AS-Inject-Bearer: STRIPE_KEY"
 ```
 
-Works with LangChain, CrewAI, AutoGen, and any agent that makes HTTP requests.
+Works with LangChain, CrewAI, AutoGen, and any framework that makes HTTP requests.
 
 ---
 
 ## Build on AgentSecrets
-
-AgentSecrets is infrastructure. The [SDK](https://github.com/The-17/agentsecrets-sdk) lets you build tools, MCP servers, and AI agents where credential values never enter your code — or the code of anyone using what you build.
 
 ```python
 pip install agentsecrets
@@ -375,20 +372,19 @@ pip install agentsecrets
 ```python
 from agentsecrets import AgentSecrets
 
-as_client = AgentSecrets()
-
-response = as_client.call(
+client = AgentSecrets()
+response = client.call(
     url="https://api.stripe.com/v1/balance",
     bearer="STRIPE_KEY"
 )
 ```
 
-You pass a key name. The SDK resolves from the OS keychain, injects at the transport layer, and returns only the API response. Every user of every tool built on the SDK gets zero-knowledge credential management automatically — without knowing AgentSecrets exists.
+The SDK has no `get()` method. There is no way to retrieve a credential value into calling code. The only operations available are the ones that keep the value out of agent context. The secure path is the only path.
 
 **Built on the SDK:**
-- [Zero-Knowledge MCP Server Template](https://github.com/The-17/zero-knowledge-mcp) — scaffold for building MCP servers with zero credential storage
-- [AgentSecrets for LangChain](https://github.com/The-17/agentsecrets-langchain) — zero-knowledge API calls in any LangChain agent *(coming soon)*
-- [AgentSecrets JS SDK](https://github.com/The-17/agentsecrets-js-sdk) — JavaScript/Node.js SDK *(coming soon)*
+- [Zero-Knowledge MCP Template](https://github.com/The-17/zero-knowledge-mcp): scaffold for MCP servers with zero credential storage
+- [AgentSecrets for LangChain](https://github.com/The-17/agentsecrets-langchain): zero-knowledge API calls in any LangChain agent *(coming soon)*
+- [AgentSecrets JS SDK](https://github.com/The-17/agentsecrets-js-sdk) *(coming soon)*
 
 ---
 
@@ -399,192 +395,102 @@ You pass a key name. The SDK resolves from the OS keychain, injects at the trans
 agentsecrets init                    # Set up account or initialise a new project
 agentsecrets login                   # Login to existing account
 agentsecrets logout                  # Clear session
-agentsecrets status                  # Current user, workspace, project, environment, last sync
+agentsecrets status                  # Workspace, project, environment, last sync
 ```
 
 ### Workspaces
 ```bash
-agentsecrets workspace create "The Seventeen"       # Create workspace
-agentsecrets workspace list                         # List workspaces
-agentsecrets workspace switch "The Seventeen"       # Switch active workspace
-agentsecrets workspace invite [EMAIL_ADDRESS]       # Invite teammate
+agentsecrets workspace create "Name"
+agentsecrets workspace list
+agentsecrets workspace switch "Name"
+agentsecrets workspace invite user@email.com
+agentsecrets workspace promote user@email.com
+agentsecrets workspace demote user@email.com
+agentsecrets workspace allowlist add <domain>
+agentsecrets workspace allowlist list
+agentsecrets workspace allowlist log
 ```
 
 ### Projects
 ```bash
-agentsecrets project create my-app        # Create project
-agentsecrets project list                 # List projects in current workspace
-agentsecrets project use my-app           # Set active project
-agentsecrets project update my-app        # Update project
-agentsecrets project delete my-app        # Delete project
+agentsecrets project create NAME
+agentsecrets project list
+agentsecrets project use NAME
+agentsecrets project update NAME
+agentsecrets project delete NAME
 ```
 
 ### Environments
 ```bash
-agentsecrets environment switch <name>        # Switch active environment (development, staging, production)
-agentsecrets environment list                 # List all environments and secret counts
-agentsecrets environment copy <from> <to>     # Copy all secrets from one env to another
-agentsecrets environment merge <from> <to>    # Merge secrets and prompt for new values
-agentsecrets environment clean                # Delete all secrets in current environment
+agentsecrets environment switch <n>
+agentsecrets environment list
+agentsecrets environment copy <from> <to>
+agentsecrets environment merge <from> <to>
+agentsecrets environment clean
 ```
 
 ### Secrets
 ```bash
-agentsecrets secrets set KEY=value        # Store a secret
-agentsecrets secrets get KEY              # Retrieve a value (you see it, agent doesn't)
-agentsecrets secrets list                 # List key names — never values
-agentsecrets secrets push                 # Upload .env to cloud (encrypted)
-agentsecrets secrets pull                 # Download cloud secrets to keychain
-agentsecrets secrets delete KEY           # Remove a secret
-agentsecrets secrets diff                 # Compare local vs cloud active environment
-agentsecrets secrets diff --from X --to Y # Compare two environments directly
+agentsecrets secrets set KEY=value
+agentsecrets secrets get KEY
+agentsecrets secrets list
+agentsecrets secrets push
+agentsecrets secrets pull
+agentsecrets secrets delete KEY
+agentsecrets secrets diff
+agentsecrets secrets diff --from X --to Y
 ```
 
-### Proxy & Calls
+### Proxy and Calls
 ```bash
-agentsecrets call --url <URL> --bearer KEY    # One-shot authenticated call
-agentsecrets proxy start [--port 8765]        # Start HTTP proxy
-agentsecrets proxy status                     # Check proxy status & revocation list
-agentsecrets proxy sync                       # Force background revocation sync
-agentsecrets proxy logs [--last N] [--watch]  # View or tail local audit trail
-agentsecrets exec                             # OpenClaw exec provider (reads stdin)
-agentsecrets mcp serve                        # Start MCP server
-agentsecrets mcp install                      # Auto-configure AI tools
+agentsecrets call --url URL --bearer KEY
+agentsecrets proxy start [--port 8765]
+agentsecrets proxy status
+agentsecrets proxy stop
+agentsecrets proxy logs [--last N] [--watch] [--env ENV]
+agentsecrets mcp serve
+agentsecrets mcp install
+agentsecrets exec
+agentsecrets env -- <command>
 ```
 
-### Logging & Audit
+### Audit
 ```bash
-agentsecrets log list [--tail]               # View or stream global backend logs
-agentsecrets log export --format csv         # Export global logs to CSV/JSON
-agentsecrets log summary                     # View global statistics and usage metrics
-agentsecrets log detail <id>                 # Inspect a specific request deeply
+agentsecrets log list [--tail] [--agent NAME] [--identity anonymous]
+agentsecrets log summary [--since 7d]
+agentsecrets log export --format csv
+agentsecrets log detail <id>
 ```
 
 ### Agent Identity
 ```bash
-agentsecrets agent list                      # List AI agents attached to workspace
-agentsecrets agent delete <name>             # Delete agent & safely cascade-revoke tokens
-agentsecrets agent token issue <name>        # Generate a new session key for an AI
-agentsecrets agent token list <name>         # See all active tokens for an agent
-agentsecrets agent token revoke <id> --agent="<name>" # Revoke a specific identity token
+agentsecrets agent list
+agentsecrets agent delete <n>
+agentsecrets agent token issue <n>
+agentsecrets agent token list <n>
+agentsecrets agent token revoke <id> --agent="<n>"
 ```
-
-### Environment Injection
-```bash
-agentsecrets env -- <command> [args...]       # Inject secrets as env vars into child process
-agentsecrets env -- stripe mcp                # Wrap Stripe MCP
-agentsecrets env -- node server.js            # Wrap Node.js
-agentsecrets env -- npm run dev               # Wrap any dev server
-```
-
-### Workspace Security
-```bash
-agentsecrets workspace allowlist add <domain> [domain...]  # Authorize domains
-agentsecrets workspace allowlist list                      # List allowed domains
-agentsecrets workspace allowlist log                       # View allowlist audit log
-agentsecrets workspace promote user@email.com              # Grant admin role
-agentsecrets workspace demote user@email.com               # Revoke admin role
-```
-
----
-
-## vs. Traditional Secrets Management
-
-| | AgentSecrets | HashiCorp Vault | AWS Secrets Manager | Doppler | 1Password |
-|---|---|---|---|---|---|
-| **Agent as operator** | ✅ Full lifecycle | ❌ Consumer only | ❌ Consumer only | ❌ Consumer only | ❌ Consumer only |
-| **Zero-knowledge end to end** | ✅ Every step | ❌ Agent retrieves value | ❌ Agent retrieves value | ❌ Agent retrieves value | ⚠️ Partial |
-| **Domain allowlist enforcement** | ✅ Deny-by-default | ❌ | ❌ | ❌ | ❌ |
-| **Response body redaction** | ✅ Echo exfiltration defense | ❌ | ❌ | ❌ | ❌ |
-| **Prompt injection protection** | ✅ Structural | ❌ | ❌ | ❌ | ❌ |
-| **Environment support (dev/staging/prod)** | ✅ Built-in | ⚠️ Manual | ⚠️ Manual | ✅ | ⚠️ Manual |
-| **Env var injection (`run --`)** | ✅ `agentsecrets env` | ❌ | ❌ | ✅ `doppler run` | ✅ `op run` |
-| **SDK for building on top** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **AI-native workflow** | ✅ Built for it | ❌ | ❌ | ❌ | ❌ |
-| **Team workspaces** | ✅ Built-in | ⚠️ Complex | ⚠️ IAM roles | ✅ | ✅ Vaults |
-| **OS keychain storage** | ✅ | ❌ | ❌ | ❌ | ✅ |
-| **Setup time** | ⚡ 1 minute | ⏱️ Hours | ⏱️ 30+ min | ⏱️ 10 min | ⏱️ 5 min |
-| **Free** | ✅ | ✅ OSS | ⚠️ AWS costs | ⚠️ Limited | ❌ |
-
----
-
-## Use Cases
-
-### Solo Developer
-```bash
-agentsecrets init
-agentsecrets secrets set STRIPE_KEY=sk_live_...
-agentsecrets mcp install
-# Ask Claude to check your Stripe balance. It manages the call. Never sees the key.
-```
-
-### Team Onboarding
-```bash
-agentsecrets login
-agentsecrets workspace switch "Acme Engineering"
-agentsecrets project use payments-service
-agentsecrets secrets pull
-# Ready. No credential sharing. No .env files sent over Slack.
-```
-
-### Autonomous Agent Deployment
-```bash
-# Agent handles this entire flow without human intervention
-agentsecrets secrets diff                    # checks for drift
-agentsecrets secrets pull                    # syncs if needed
-agentsecrets environment switch production   # switch to production environment
-agentsecrets secrets pull                    # pull production secrets
-npm run deploy
-agentsecrets proxy logs                      # audits what happened
-```
-
-### Incident Response at 2am
-```bash
-agentsecrets proxy start
-# Claude queries logs, checks database state, calls APIs
-# Full access. Zero credential exposure. Full audit trail.
-# You debug. The agent never held your credentials.
-```
-
----
-
-## Architecture
-
-Built with Go for universal compatibility:
-
-- **Crypto**: X25519 key exchange + AES-256-GCM encryption + Argon2id key derivation
-- **Keyring**: OS keychain integration (macOS Keychain, Linux Secret Service, Windows Credential Manager)
-- **Proxy**: Local HTTP server with session token, SSRF protection, redirect stripping
-- **Cloud**: Zero-knowledge backend — stores ciphertext only, structurally cannot decrypt
-- **Distribution**: Single binary, ~5-10MB, no runtime dependencies
-
-See [ARCHITECTURE.md](docs/ARCHITECTURE.md) and [PROXY.md](docs/PROXY.md) for deep dives.
 
 ---
 
 ## Roadmap
 
 - [x] Core CLI
-- [x] Workspaces + Projects + Team invites
 - [x] Zero-knowledge cloud sync
-- [x] Credential proxy — 6 auth styles
+- [x] Credential proxy with 6 auth styles
+- [x] Workspaces, projects, team invites
 - [x] MCP server (Claude Desktop, Cursor)
 - [x] HTTP proxy server
 - [x] OpenClaw skill + exec provider
-- [x] Audit logging
+- [x] Governance audit log
+- [x] Agent identity + token management
+- [x] Environment support (development / staging / production)
+- [x] Domain allowlist + response body redaction
+- [x] `agentsecrets env` for environment variable injection
+- [x] Python SDK
+- [x] Zero-Knowledge MCP Template
 - [x] Multi-platform binaries (macOS, Linux, Windows)
 - [x] npm, pip, Homebrew distribution
-- [x] secrets diff
-- [x] Automatic JWT refresh
-- [x] Zero-trust domain allowlist enforcement
-- [x] Response body redaction (echo exfiltration defense)
-- [x] Workspace role management (promote/demote)
-- [x] `agentsecrets env` — environment variable injection
-- [x] Python SDK (`pip install agentsecrets`)
-- [x] Zero-Knowledge MCP Server Template
-- [x] Agent identity + token management
-- [x] Governance audit log
-- [x] Environment support (development / staging / production)
 - [ ] AgentSecrets for LangChain
 - [ ] AgentSecrets for CrewAI
 - [ ] JavaScript / Node.js SDK
@@ -597,16 +503,12 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md) and [PROXY.md](docs/PROXY.md) for de
 
 ## Security
 
-Reporting vulnerabilities: do NOT open public issues.
-Email: hello@theseventeen.co — response within 24 hours.
+Vulnerabilities: do NOT open public issues.
+Email: hello@theseventeen.co, response within 24 hours.
 
 ---
 
 ## Contributing
-
-Found a bug? [Open an issue](https://github.com/The-17/agentsecrets/issues)
-Have an idea? [Start a discussion](https://github.com/The-17/agentsecrets/discussions)
-Want to contribute? Check [CONTRIBUTING.md](docs/CONTRIBUTING.md)
 
 ```bash
 git clone https://github.com/The-17/agentsecrets
@@ -616,25 +518,14 @@ make build
 make test
 ```
 
+Found a bug? [Open an issue](https://github.com/The-17/agentsecrets/issues)
+Have an idea? [Start a discussion](https://github.com/The-17/agentsecrets/discussions)
+Want to contribute? [CONTRIBUTING.md](docs/CONTRIBUTING.md)
+
 ---
 
 ## Links
 
 - **Website**: [agentsecrets.theseventeen.co](https://agentsecrets.theseventeen.co)
-- **Deep Dive**: [Building AgentSecrets (Engineering Blog)](https://engineering.theseventeen.co/series/building-agentsecrets)
-- **GitHub**: [github.com/The-17/agentsecrets](https://github.com/The-17/agentsecrets)
-- **SDK**: [github.com/The-17/agentsecrets-sdk](https://github.com/The-17/agentsecrets-sdk)
-- **ClawHub**: [clawhub.ai/SteppaCodes/agentsecrets](https://clawhub.ai/SteppaCodes/agentsecrets)
-- **Related**: [SecretsCLI](https://github.com/The-17/SecretsCLI) — original Python implementation
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE)
-
-Built by [The Seventeen](https://theseventeen.co)
-
----
-
-**The agent operates it. The agent never sees it.** ⭐
+- **Docs**: [agentsecrets.theseventeen.co/docs](https://agentsecrets.theseventeen.co/docs)
+- **Engineering Blog**: [enginee
