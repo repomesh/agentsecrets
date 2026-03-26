@@ -211,9 +211,9 @@ agentsecrets environment merge staging production
 ## Team Workspaces
 
 ```bash
-agentsecrets workspace create "Acme Engineering"
-agentsecrets workspace invite alice@acme.com
-agentsecrets workspace invite bob@acme.com
+agentsecrets workspace create "The Seventeen Engineering"
+agentsecrets workspace invite alice@theseventeen.co
+agentsecrets workspace invite bob@theseventeen.co
 
 agentsecrets project create payments-service
 agentsecrets project create auth-service
@@ -222,7 +222,7 @@ agentsecrets project create auth-service
 New developer onboards:
 ```bash
 agentsecrets login
-agentsecrets workspace switch "Acme Engineering"
+agentsecrets workspace switch "The Seventeen Engineering"
 agentsecrets project use payments-service
 agentsecrets secrets pull
 # Ready. No credential sharing. No .env files sent over Slack.
@@ -528,4 +528,16 @@ Want to contribute? [CONTRIBUTING.md](docs/CONTRIBUTING.md)
 
 - **Website**: [agentsecrets.theseventeen.co](https://agentsecrets.theseventeen.co)
 - **Docs**: [agentsecrets.theseventeen.co/docs](https://agentsecrets.theseventeen.co/docs)
-- **Engineering Blog**: [enginee
+- **Engineering Blog**: [engineering.theseventeen.co/series/building-agentsecrets](engineering.theseventeen.co/series/building-agentsecrets)
+- **SDK**: [github.com/The-17/agentsecrets-sdk](github.com/The-17/agentsecrets-sdk)
+- **ClawHub**: [clawhub.ai/SteppaCodes/agentsecrets](clawhub.ai/SteppaCodes/agentsecrets)
+
+- ---
+## License
+MIT. See [LICENSE](LICENSE)
+
+Built by [The Seventeen](https://theseventeen.co)
+
+---
+
+*You cannot steal what was never there.*
