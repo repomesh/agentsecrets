@@ -13,6 +13,7 @@ import (
 
 	"github.com/The-17/agentsecrets/pkg/ui"
 	"github.com/The-17/agentsecrets/pkg/config"
+	"github.com/The-17/agentsecrets/pkg/keychainauth"
 	"github.com/The-17/agentsecrets/pkg/keyring"
 	"github.com/The-17/agentsecrets/pkg/proxy"
 )
@@ -46,6 +47,12 @@ func runEnv(cmd *cobra.Command, args []string) error {
 	project, err := config.LoadProjectConfig()
 	if err != nil || project == nil || project.ProjectID == "" {
 		return fmt.Errorf("no active project. Run: agentsecrets project use <name>")
+	}
+
+	// Ensure keychain-auth session is established before reading secrets.
+	// env uses DisableFlagParsing so PersistentPreRunE doesn't fire.
+	if err := ensureKeychainAuthForEnv(); err != nil {
+		return err
 	}
 
 	// Resolve all secrets from keychain
@@ -146,3 +153,33 @@ func auditLog(project *config.ProjectConfig, cmdArgs []string, secretKeys []stri
 		ProjectID:   project.ProjectID,
 	})
 }
+
+// ensureKeychainAuthForEnv establishes a keychain-auth session for commands
+// that use DisableFlagParsing (env, exec) and therefore skip PersistentPreRunE.
+func ensureKeychainAuthForEnv() error {
+	if keychainauth.IsInitialized() {
+		return nil
+	}
+
+	if !keychainauth.IsAvailable() {
+		fmt.Println()
+		ui.Info("Setting up keychain-auth — this secures your secrets with process-level verification.")
+		ui.Info("This is a one-time setup that runs automatically.")
+		fmt.Println()
+
+		if err := ui.Spinner("Installing and configuring keychain-auth...", func() error {
+			return keychainauth.AutoSetup()
+		}); err != nil {
+			return fmt.Errorf("keychain-auth is required for secret operations: %w", err)
+		}
+
+		ui.Success("keychain-auth configured successfully.")
+		fmt.Println()
+	}
+
+	if err := keychainauth.Init(); err != nil {
+		return fmt.Errorf("%s", keychainauth.UserMessage(err))
+	}
+	return nil
+}
+

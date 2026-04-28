@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/The-17/agentsecrets/pkg/config"
+	"github.com/The-17/agentsecrets/pkg/keychainauth"
 	"github.com/The-17/agentsecrets/pkg/keyring"
 )
 
@@ -83,6 +84,13 @@ func runExec(cmd *cobra.Command, args []string) {
 		project = &config.ProjectConfig{ProjectID: globalProjectID}
 	}
 
+	// Ensure keychain-auth session before reading secrets.
+	// exec uses DisableFlagParsing-like behavior so PersistentPreRunE may not fire.
+	if err := ensureKeychainAuthForExec(); err != nil {
+		fmt.Fprintf(os.Stderr, "keychain-auth: %v\n", err)
+		os.Exit(1)
+	}
+
 	for _, id := range req.IDs {
 		envName := config.ResolveEnvironment()
 		val, err := keyring.GetSecret(project.ProjectID, envName, id)
@@ -108,5 +116,22 @@ func runExec(cmd *cobra.Command, args []string) {
 
 	fmt.Println(string(out))
 	os.Exit(0)
+}
+
+// ensureKeychainAuthForExec establishes a keychain-auth session for the exec command.
+// exec is a machine-to-machine protocol (stdin/stdout JSON) so we use stderr
+// for any setup messages and skip the spinner UI.
+func ensureKeychainAuthForExec() error {
+	if keychainauth.IsInitialized() {
+		return nil
+	}
+
+	if !keychainauth.IsAvailable() {
+		if err := keychainauth.AutoSetup(); err != nil {
+			return fmt.Errorf("keychain-auth setup failed: %w", err)
+		}
+	}
+
+	return keychainauth.Init()
 }
 

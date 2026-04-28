@@ -8,6 +8,7 @@ import (
 	"github.com/dustin/go-humanize"
 
 	"github.com/The-17/agentsecrets/pkg/config"
+	"github.com/The-17/agentsecrets/pkg/keychainauth"
 	"github.com/The-17/agentsecrets/pkg/ui"
 )
 
@@ -59,6 +60,13 @@ var statusCmd = &cobra.Command{
 			ui.StatusRowDim("Selected Workspace:", wsDisplay)
 		} else {
 			ui.StatusRow("Selected Workspace:", wsDisplay)
+		}
+
+		// Keychain-auth daemon status
+		if keychainauth.IsAvailable() {
+			ui.StatusRow("keychain-auth:", "running")
+		} else {
+			ui.StatusRowDim("keychain-auth:", "not running — run 'agentsecrets init' to set up")
 		}
 
 		// Environment info

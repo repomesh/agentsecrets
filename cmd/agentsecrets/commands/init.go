@@ -11,6 +11,7 @@ import (
 
 	"github.com/The-17/agentsecrets/pkg/auth"
 	"github.com/The-17/agentsecrets/pkg/config"
+	"github.com/The-17/agentsecrets/pkg/keychainauth"
 	"github.com/The-17/agentsecrets/pkg/ui"
 )
 
@@ -162,6 +163,15 @@ func runInit(cmd *cobra.Command, args []string) error {
 	ui.Success("Project initialised successfully!")
 	ui.Info("Config written to .agentsecrets/project.json")
 	ui.Info("Run 'agentsecrets project create <name>' or 'agentsecrets project use <name>' to link this folder.")
+
+	// Phase 3: Setup keychain-auth daemon
+	if err := ui.Spinner("Configuring secure keychain daemon...", func() error {
+		return keychainauth.AutoSetup()
+	}); err != nil {
+		ui.Warning(fmt.Sprintf("Failed to auto-configure keychain-auth: %v", err))
+		ui.Info("You may need to run 'agentsecrets setup keychain-auth' later, or install manually:")
+		ui.Info("  brew install The-17/tap/keychain-auth")
+	}
 
 	return nil
 }

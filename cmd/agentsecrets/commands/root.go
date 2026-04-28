@@ -7,6 +7,7 @@ import (
 	"github.com/The-17/agentsecrets/pkg/api"
 	"github.com/The-17/agentsecrets/pkg/auth"
 	"github.com/The-17/agentsecrets/pkg/config"
+	"github.com/The-17/agentsecrets/pkg/keychainauth"
 	"github.com/The-17/agentsecrets/pkg/ui"
 	"github.com/The-17/agentsecrets/pkg/workspaces"
 	"fmt"
@@ -43,6 +44,9 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() error {
+	// Ensure keychain-auth socket is closed on exit
+	defer keychainauth.Close()
+
 	// Run update check. It's efficient (24h interval) and has a short timeout.
 	if res, _ := config.CheckForUpdates(Version); res != nil && res.NewVersionAvailable {
 		ui.Banner(fmt.Sprintf("Update Available: %s → %s", res.CurrentVersion, res.LatestVersion))
@@ -76,9 +80,12 @@ func init() {
 	// Add auth middleware to commands that require it
 	workspaceCmd.PersistentPreRunE = authService.EnsureAuth
 	projectCmd.PersistentPreRunE = authService.EnsureAuth
-	secretsCmd.PersistentPreRunE = authService.EnsureAuth
-	callCmd.PersistentPreRunE = authService.EnsureAuth
 	environmentCmd.PersistentPreRunE = authService.EnsureAuth
+
+	// Commands that read secrets need both auth AND keychain-auth session.
+	// The keychainAuthMiddleware chains EnsureAuth → keychainauth.Init().
+	secretsCmd.PersistentPreRunE = keychainAuthMiddleware
+	callCmd.PersistentPreRunE = keychainAuthMiddleware
 
 	rootCmd.AddCommand(workspaceCmd)
 	rootCmd.AddCommand(projectCmd)
@@ -91,4 +98,53 @@ func init() {
 	rootCmd.AddCommand(environmentCmd)
 	rootCmd.AddCommand(NewEnvCmd())
 	rootCmd.AddCommand(NewExecCmd())
+}
+
+// keychainAuthMiddleware is a PersistentPreRunE that ensures both:
+// 1. The user is authenticated (EnsureAuth)
+// 2. A keychain-auth session is established (keychainauth.Init)
+//
+// If keychain-auth is not installed or not running, it performs automatic
+// setup with a spinner and explanatory message so the user understands
+// what is happening and why.
+func keychainAuthMiddleware(cmd *cobra.Command, args []string) error {
+	// Step 1: Ensure the user is logged in
+	if err := authService.EnsureAuth(cmd, args); err != nil {
+		return err
+	}
+
+	// Step 2: Skip if session already established (e.g. parent command already ran this)
+	if keychainauth.IsInitialized() {
+		return nil
+	}
+
+	// Step 3: If keychain-auth isn't available, run auto-setup
+	if !keychainauth.IsAvailable() {
+		fmt.Println()
+		ui.Info("Setting up keychain-auth — this secures your secrets with process-level verification.")
+		ui.Info("This is a one-time setup that runs automatically.")
+		fmt.Println()
+
+		if err := ui.Spinner("Installing and configuring keychain-auth...", func() error {
+			return keychainauth.AutoSetup()
+		}); err != nil {
+			ui.Error("keychain-auth setup failed: " + err.Error())
+			fmt.Println()
+			ui.Info("You can set it up manually:")
+			ui.Info("  brew install The-17/tap/keychain-auth")
+			ui.Info("  keychain-auth start")
+			fmt.Println()
+			return fmt.Errorf("keychain-auth is required for secret operations")
+		}
+
+		ui.Success("keychain-auth configured successfully.")
+		fmt.Println()
+	}
+
+	// Step 4: Establish the session
+	if err := keychainauth.Init(); err != nil {
+		return fmt.Errorf("%s", keychainauth.UserMessage(err))
+	}
+
+	return nil
 }
