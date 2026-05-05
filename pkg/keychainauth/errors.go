@@ -12,6 +12,11 @@ func (e *SessionRejectedError) Error() string {
 	return fmt.Sprintf("keychain-auth rejected session: %s", e.Reason)
 }
 
+// IsHashMismatch returns true if the rejection was due to a binary hash mismatch.
+func (e *SessionRejectedError) IsHashMismatch() bool {
+	return e.Reason == reasonHashMismatch
+}
+
 // SecretDeniedError is returned when keychain-auth denies a SECRET_REQUEST.
 type SecretDeniedError struct {
 	Key    string

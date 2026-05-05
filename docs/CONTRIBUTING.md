@@ -94,11 +94,13 @@ agentsecrets/
 │   ├── auth/                      # Authentication + JWT refresh middleware
 │   ├── config/                    # Global config + project config
 │   ├── crypto/                    # X25519 + AES-256-GCM + Argon2id
+│   ├── keychainauth/              # keychain-auth daemon integration
 │   ├── keyring/                   # OS keychain integration
 │   ├── mcp/                       # MCP server implementation
 │   ├── projects/                  # Project API wrappers
 │   ├── proxy/                     # Proxy engine, injector, audit logger
 │   ├── secrets/                   # Secret management + dotenv
+│   ├── telemetry/                 # Local usage tracking + background sync
 │   ├── ui/                        # Terminal UI components
 │   └── workspaces/                # Workspace + allowlist API wrappers
 ├── integrations/openclaw/         # OpenClaw skill (SKILL.md)
@@ -119,9 +121,9 @@ agentsecrets/
 
 ### Medium Priority
 - [ ] Secret rotation
-- [ ] Environment support (dev/staging/prod)
 - [ ] Web dashboard (separate repo)
 - [ ] CI/CD pipeline improvements
+- [ ] JavaScript / Node.js SDK
 
 ### Low Priority
 - [ ] SSO integration

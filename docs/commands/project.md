@@ -10,6 +10,7 @@ agentsecrets project create <name>
 agentsecrets project use <project-id-or-name>
 agentsecrets project update <name>
 agentsecrets project delete <name>
+agentsecrets project invite <email>
 ```
 
 ---
@@ -112,6 +113,27 @@ Permanently deletes the project and all its secrets from the remote. This cannot
 
 ---
 
+## project invite
+
+```bash
+agentsecrets project invite user@email.com
+```
+
+Invites a collaborator to the active project. This command handles the security boundary between personal and team work automatically.
+
+### Personal Workspace Migration
+
+If the project is currently in your **personal workspace**, AgentSecrets will automatically perform a "seamless migration" to a shared workspace during the invite:
+
+1. **Creates a new shared workspace** with the same name as the project.
+2. **Moves the project** from your personal workspace into this new shared workspace.
+3. **Adds the invited user** and **yourself** as members of the new workspace.
+4. **Re-encrypts all secrets** (development, staging, and production) with a new workspace-wide key that both members can access.
+
+This ensures your personal workspace remains private, while allowing you to collaborate on specific projects as soon as you're ready to share them.
+
+---
+
 ## The Project Config File
 
 `.agentsecrets/project.json` is the link between a local directory and a remote project:
@@ -120,10 +142,13 @@ Permanently deletes the project and all its secrets from the remote. This cannot
 {
   "project_id": "proj_abc123",
   "project_name": "my-backend",
+  "description": "Production API services",
+  "environment": "development",
   "workspace_id": "ws_xyz789",
-  "storage_mode": 1,
+  "workspace_name": "My Team",
   "last_pull": "2026-03-03T22:00:00Z",
-  "last_push": "2026-03-03T21:00:00Z"
+  "last_push": "2026-03-03T21:00:00Z",
+  "storage_mode": 1
 }
 ```
 
@@ -135,18 +160,23 @@ This file contains no credentials and is safe to commit to version control. Team
 
 ---
 
-## Multi-Project Directories
+## Multi-Project Directories (Monorepos)
 
-One directory = one active project. If you need to work with secrets from multiple projects simultaneously, use `agentsecrets secrets list --project <name>` or `agentsecrets call` with explicit project context.
-
-For monorepos, create a `.agentsecrets/project.json` in each service subdirectory:
+One directory = one active project. For monorepos, create a `.agentsecrets/project.json` in each service subdirectory. This allows each service to have its own secret namespace and environment context.
 
 ```
 repo/
+├── .agent/
+│   └── workflows/
+│       └── agentsecrets.md    # Shared agent instructions
 ├── services/
 │   ├── api/
-│   │   └── .agentsecrets/project.json    # project: api-service
+│   │   └── .agentsecrets/
+│   │       └── project.json    # project: api-service
 │   └── worker/
-│       └── .agentsecrets/project.json    # project: worker-service
+│       └── .agentsecrets/
+│           └── project.json    # project: worker-service
 └── ...
 ```
+
+When you `cd` into a subdirectory, AgentSecrets automatically picks up the local project context.

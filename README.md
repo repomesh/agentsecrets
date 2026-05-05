@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://go.dev/)
 [![Stars](https://img.shields.io/github/stars/The-17/agentsecrets?style=flat)](https://github.com/The-17/agentsecrets/stargazers)
-[![ClawHub](https://img.shields.io/badge/ClawHub-agentsecrets-blue)](https://clawhub.ai/SteppaCodes/agentsecrets)
+[![ClawHub](https://img.shields.io/badge/ClawHub-agentsecrets-blue)](https:/a/clawhub.ai/SteppaCodes/agentsecrets)
 
 **[Website](https://agentsecrets.theseventeen.co)** | **[Docs](https://agentsecrets.theseventeen.co/docs)** | **[Engineering Blog](https://engineering.theseventeen.co/series/building-agentsecrets)**
 
@@ -418,6 +418,7 @@ agentsecrets project list
 agentsecrets project use NAME
 agentsecrets project update NAME
 agentsecrets project delete NAME
+agentsecrets project invite user@email.com
 ```
 
 ### Environments

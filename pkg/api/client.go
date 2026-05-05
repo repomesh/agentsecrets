@@ -72,6 +72,12 @@ var endpointMap = map[string]map[string]string{
 		"summary": "audit/summary/",
 		"export":  "audit/export/",
 	},
+	"audit": {
+		"sync": "internal/audit/logs/",
+	},
+	"telemetry": {
+		"sync": "/telemetry/sync/",
+	},
 	"users": {
 		"public_key": "users/{email}/public-key/",
 	},
@@ -79,9 +85,10 @@ var endpointMap = map[string]map[string]string{
 
 // publicEndpoints are endpoints that don't require an auth token
 var publicEndpoints = map[string]bool{
-	"auth.signup":  true,
-	"auth.login":   true,
-	"auth.refresh": true,
+	"auth.signup":    true,
+	"auth.login":     true,
+	"auth.refresh":   true,
+	"telemetry.sync": true,
 }
 
 // Client handles all HTTP communication with the AgentSecrets API server.
@@ -116,7 +123,15 @@ func (c *Client) Call(endpointKey, method string, data interface{}, urlParams ma
 		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%s", c.BaseURL, path)
+	var url string
+	if strings.HasPrefix(path, "/") {
+		// For root-level endpoints (like telemetry), strip the /api suffix if present
+		baseURLRoot := strings.TrimSuffix(strings.TrimRight(c.BaseURL, "/"), "/api")
+		url = fmt.Sprintf("%s%s", baseURLRoot, path)
+	} else {
+		base := strings.TrimRight(c.BaseURL, "/")
+		url = fmt.Sprintf("%s/%s", base, path)
+	}
 
 	// Add query parameters if any
 	if len(queryParams) > 0 {
@@ -148,9 +163,10 @@ func (c *Client) Call(endpointKey, method string, data interface{}, urlParams ma
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 
-	// Add auth header if not a public endpoint
-	if !publicEndpoints[endpointKey] && c.getToken != nil {
+	// Add auth header if available
+	if c.getToken != nil {
 		token := c.getToken()
 		if token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
@@ -184,9 +200,6 @@ func (c *Client) DecodeError(resp *http.Response) error {
 	}
 
 	bodySnippet := string(bodyBytes)
-	if len(bodySnippet) > 100 {
-		bodySnippet = bodySnippet[:100] + "..."
-	}
 
 	if bodySnippet != "" {
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, bodySnippet)

@@ -197,9 +197,6 @@ func runAllowlistList(_ *cobra.Command, _ []string) error {
 	headers := []string{"Domain", "Added By", "Added At"}
 	rows := make([][]string, len(domainsResp))
 	for i, d := range domainsResp {
-		// Formatting Time: The spec shows '2026-03-01 14:23'. 
-		// Assuming CreatedAt is ISO8601, we might need to substring or parse it. 
-		// Given simplicity, we'll assume it's roughly fine or we can substring to 16 chars if it's "YYYY-MM-DDTHH:MM:SSZ"
 		timeStr := strings.Replace(d.CreatedAt, "T", " ", 1)
 		if len(timeStr) > 16 {
 			timeStr = timeStr[:16]

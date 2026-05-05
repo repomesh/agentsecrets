@@ -102,6 +102,8 @@ Alice's copy of the workspace key can only be decrypted with her private key (wh
 
 *Requires: Admin or Owner role on the current workspace.*
 
+> **Note:** Inviting to a personal workspace is blocked. Use `agentsecrets project invite <email>` instead — it automatically creates a shared workspace and migrates the project.
+
 ---
 
 ## workspace remove
@@ -173,11 +175,10 @@ agentsecrets workspace allowlist list
 Shows the full allowlist for the current workspace:
 
 ```
-DOMAIN
-api.stripe.com
-api.openai.com
-api.sendgrid.com
-maps.googleapis.com
+DOMAIN                ADDED BY              ADDED AT
+api.stripe.com        you@example.com       2026-03-01 14:23
+api.openai.com        alice@acme.com        2026-03-15 09:10
+api.sendgrid.com      you@example.com       2026-04-01 11:45
 ```
 
 ---

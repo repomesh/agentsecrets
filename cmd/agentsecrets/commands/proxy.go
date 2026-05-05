@@ -183,6 +183,11 @@ func runProxyStart(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// Inject apiClient for cloud log syncing
+	if engine.Audit != nil {
+		engine.Audit.APIClient = apiClient
+	}
+
 	agentToken := os.Getenv("AS_AGENT_TOKEN")
 	if agentToken != "" {
 		ui.StatusRow("Agent:", "Token provided via AS_AGENT_TOKEN (issued)")

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -104,25 +105,10 @@ func EnsureRegistered(keychainAuthPath string) error {
 		return fmt.Errorf("cannot determine own binary path: %w", err)
 	}
 
-	selfHash, err := computeHash(selfPath)
-	if err != nil {
-		return fmt.Errorf("cannot hash own binary: %w", err)
-	}
-
-	cmd := exec.Command(keychainAuthPath, "register",
-		"--binary", selfPath,
-		"--hash", selfHash,
-	)
-
+	cmd := exec.Command(keychainAuthPath, "register", selfPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		// If the register command doesn't support --binary/--hash flags,
-		// try the positional argument format used in keychain-auth v0.1.0
-		cmd = exec.Command(keychainAuthPath, "register", selfPath)
-		output, err = cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("failed to register with keychain-auth: %w\nOutput: %s", err, strings.TrimSpace(string(output)))
-		}
+		return fmt.Errorf("failed to register with keychain-auth: %w\nOutput: %s", err, strings.TrimSpace(string(output)))
 	}
 
 	return nil
@@ -144,6 +130,27 @@ func EnsureDaemonRunning(keychainAuthPath string) error {
 	default:
 		return fmt.Errorf("cannot start keychain-auth daemon on %s", runtime.GOOS)
 	}
+}
+
+// RestartDaemon kills any running keychain-auth daemon and starts a fresh one.
+// This is needed after re-registering a binary so the daemon picks up the new hash.
+func RestartDaemon() error {
+	// Kill existing daemon
+	_ = exec.Command("pkill", "-f", "keychain-auth").Run()
+
+	// Remove stale socket
+	sockPath := SocketPath()
+	_ = os.Remove(sockPath)
+
+	// Wait a moment for the process to die
+	time.Sleep(200 * time.Millisecond)
+
+	// Find keychain-auth and start fresh
+	kcPath, err := exec.LookPath("keychain-auth")
+	if err != nil {
+		return fmt.Errorf("keychain-auth not found in PATH: %w", err)
+	}
+	return startDirect(kcPath)
 }
 
 // startDaemonMacOS starts keychain-auth via launchctl on macOS.
@@ -190,7 +197,16 @@ func startDaemonLinux(keychainAuthPath string) error {
 // startDirect starts keychain-auth as a background process. This is the fallback
 // when the system service manager is not configured.
 func startDirect(keychainAuthPath string) error {
-	cmd := exec.Command(keychainAuthPath, "start")
+	sockPath := SocketPath()
+
+	// Ensure the socket directory exists
+	if err := os.MkdirAll(filepath.Dir(sockPath), 0700); err != nil {
+		return fmt.Errorf("failed to create socket directory: %w", err)
+	}
+
+	// Pass --socket so even older keychain-auth binaries that default to
+	// /var/run/ will use the user-writable path instead.
+	cmd := exec.Command(keychainAuthPath, "start", "--socket", sockPath)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil

@@ -13,6 +13,7 @@ import (
 
 	"github.com/The-17/agentsecrets/pkg/config"
 	"github.com/The-17/agentsecrets/pkg/keyring"
+	"github.com/The-17/agentsecrets/pkg/telemetry"
 )
 
 // resolveEnvForAudit returns the current environment for audit logging.
@@ -104,6 +105,10 @@ func NewEngine(projectID string) (*Engine, error) {
 
 // Execute runs the full proxy pipeline: resolve secrets → inject → forward → audit.
 func (e *Engine) Execute(req CallRequest) (*CallResult, error) {
+	// --- Telemetry ---
+	telemetry.RecordProxyCall()
+	telemetry.RecordIntegration("proxy")
+
 	// --- Validate ---
 	if req.TargetURL == "" {
 		return nil, fmt.Errorf("target URL is required")
@@ -140,6 +145,7 @@ func (e *Engine) Execute(req CallRequest) (*CallResult, error) {
 	}
 
 	logBlocked := func(reason, msg string) (*CallResult, error) {
+		telemetry.RecordProxyBlocked()
 		if e.Audit != nil {
 			_ = e.Audit.Log(AuditEvent{
 				Timestamp:      time.Now().UTC(),
@@ -212,6 +218,8 @@ func (e *Engine) Execute(req CallRequest) (*CallResult, error) {
 	secretValues := make([]string, 0, len(req.Injections))
 
 	for _, inj := range req.Injections {
+		telemetry.RecordInjectionStyle(inj.Style)
+
 		cred, err := e.ResolveSecret(inj.SecretKey)
 		if err != nil {
 			return nil, fmt.Errorf("secret '%s' not found in keychain — run 'agentsecrets secrets list' to see available keys, or add it with 'agentsecrets secrets set %s=VALUE'", inj.SecretKey, inj.SecretKey)
@@ -255,6 +263,7 @@ func (e *Engine) Execute(req CallRequest) (*CallResult, error) {
 		}
 
 		if redacted {
+			telemetry.RecordProxyRedacted()
 			result.Headers["Content-Length"] = []string{fmt.Sprintf("%d", len(result.Body))}
 		}
 	}

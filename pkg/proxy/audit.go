@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	_ "github.com/glebarez/go-sqlite"
+	"github.com/The-17/agentsecrets/pkg/api"
 )
 
 // AuditEvent records a single proxied API call.
@@ -40,10 +41,11 @@ type AuditEvent struct {
 	TokenID        string    `json:"token_id,omitempty"`
 }
 
-// AuditLogger writes AuditEvents to a local SQLite database.
+// AuditLogger writes AuditEvents to a local SQLite database and syncs them to the cloud.
 type AuditLogger struct {
-	db *sql.DB
-	mu sync.Mutex
+	db        *sql.DB
+	APIClient *api.Client
+	mu        sync.Mutex
 }
 
 // DefaultLogPath returns the default audit database path: ~/.agentsecrets/audit.db
@@ -97,7 +99,8 @@ func NewAuditLogger(dbPath string) (*AuditLogger, error) {
 		project_id TEXT,
 		token_id TEXT,
 		secret_keys TEXT,
-		auth_styles TEXT
+		auth_styles TEXT,
+		synced BOOLEAN DEFAULT 0
 	);`
 	if _, err := db.Exec(schemaTable); err != nil {
 		return nil, fmt.Errorf("failed to initialize table: %w", err)
@@ -113,9 +116,15 @@ func NewAuditLogger(dbPath string) (*AuditLogger, error) {
 		"project_id",
 		"token_id",
 		"caller_role",
+		"synced",
 	}
 	for _, col := range columns {
-		query := fmt.Sprintf("ALTER TABLE audit_events ADD COLUMN %s TEXT;", col)
+		var query string
+		if col == "synced" {
+			query = "ALTER TABLE audit_events ADD COLUMN synced BOOLEAN DEFAULT 0;"
+		} else {
+			query = fmt.Sprintf("ALTER TABLE audit_events ADD COLUMN %s TEXT;", col)
+		}
 		_, _ = db.Exec(query) // intentionally ignore error
 	}
 
@@ -176,6 +185,84 @@ func (a *AuditLogger) Log(event AuditEvent) error {
 		string(stylesJSON),
 	)
 
+	return err
+}
+
+// SyncUnpushedLogs reads unsynced events from the database, pushes them to the cloud API,
+// and marks them as synced if successful.
+func (a *AuditLogger) SyncUnpushedLogs() error {
+	if a.APIClient == nil {
+		return nil // Cloud sync is not configured
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	rows, err := a.db.Query(`
+		SELECT id, timestamp, environment, agent_id, identity_level, method, target_url,
+		       domain, status_code, duration_ms, status, reason, redacted, resolution_path,
+		       caller_role, workspace_id, project_id, token_id, secret_keys, auth_styles
+		FROM audit_events
+		WHERE synced = 0
+		LIMIT 100
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to query unsynced logs: %w", err)
+	}
+	defer rows.Close()
+
+	var events []AuditEvent
+	var ids []string
+
+	for rows.Next() {
+		var e AuditEvent
+		var keysJSON, stylesJSON string
+		var ts time.Time
+
+		err := rows.Scan(
+			&e.ID, &ts, &e.Environment, &e.AgentID, &e.IdentityLevel, &e.Method, &e.TargetURL,
+			&e.Domain, &e.StatusCode, &e.DurationMs, &e.Status, &e.Reason, &e.Redacted, &e.ResolutionPath,
+			&e.CallerRole, &e.WorkspaceID, &e.ProjectID, &e.TokenID, &keysJSON, &stylesJSON,
+		)
+		if err != nil {
+			continue // skip broken rows
+		}
+
+		e.Timestamp = ts
+		json.Unmarshal([]byte(keysJSON), &e.SecretKeys)
+		json.Unmarshal([]byte(stylesJSON), &e.AuthStyles)
+
+		events = append(events, e)
+		ids = append(ids, e.ID)
+	}
+
+	if len(events) == 0 {
+		return nil
+	}
+
+	// Push to cloud
+	data := events
+	resp, err := a.APIClient.Call("audit.sync", "POST", data, nil, nil)
+	if err != nil {
+		return fmt.Errorf("audit.sync API call failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("audit.sync returned status: %s", resp.Status)
+	}
+
+	// Mark as synced
+	// Note: We use a simple loop or placeholder builder. For 100 max, a loop over placeholders is fine.
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := fmt.Sprintf("UPDATE audit_events SET synced = 1 WHERE id IN (%s)", strings.Join(placeholders, ","))
+	_, err = a.db.Exec(query, args...)
 	return err
 }
 

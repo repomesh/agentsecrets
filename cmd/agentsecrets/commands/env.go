@@ -16,6 +16,7 @@ import (
 	"github.com/The-17/agentsecrets/pkg/keychainauth"
 	"github.com/The-17/agentsecrets/pkg/keyring"
 	"github.com/The-17/agentsecrets/pkg/proxy"
+	"github.com/The-17/agentsecrets/pkg/telemetry"
 )
 
 func NewEnvCmd() *cobra.Command {
@@ -35,6 +36,8 @@ func NewEnvCmd() *cobra.Command {
 }
 
 func runEnv(cmd *cobra.Command, args []string) error {
+	telemetry.RecordIntegration("env")
+
 	// Strip leading -- if present
 	if len(args) > 0 && args[0] == "--" {
 		args = args[1:]

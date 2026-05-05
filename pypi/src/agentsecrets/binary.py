@@ -8,28 +8,26 @@ import tempfile
 import shutil
 import stat
 
-# Try to get the version from package metadata, fallback to a hardcoded version
+import json
+
+def get_latest_github_version():
+    """Fetches the latest version tag from GitHub API."""
+    try:
+        url = "https://api.github.com/repos/The-17/agentsecrets/releases/latest"
+        req = urllib.request.Request(url, headers={'User-Agent': 'agentsecrets-pypi'})
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode())
+            return data['tag_name'].lstrip('v')
+    except Exception:
+        return None
+
 def _get_version():
     try:
         from importlib.metadata import version, PackageNotFoundError
-    except ImportError:  # Python < 3.8
-        try:
-            from pkg_resources import get_distribution, DistributionNotFound
-        except ImportError:
-            # Fallback if pkg_resources is also not available
-            return "1.1.0"
-
-        try:
-            return get_distribution("agentsecrets-cli").version
-        except DistributionNotFound:
-            # Fallback if package not found
-            return "1.1.0"
-
-    try:
         return version("agentsecrets-cli")
-    except PackageNotFoundError:
-        # Fallback if package not found
-        return "1.1.0"
+    except (ImportError, PackageNotFoundError):
+        latest = get_latest_github_version()
+        return latest if latest else "1.1.3"
 
 VERSION = _get_version()
 GITHUB_REPO = "The-17/agentsecrets"

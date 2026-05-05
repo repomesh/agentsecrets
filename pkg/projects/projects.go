@@ -13,6 +13,7 @@ import (
 	"github.com/The-17/agentsecrets/pkg/config"
 	"github.com/The-17/agentsecrets/pkg/crypto"
 	"github.com/The-17/agentsecrets/pkg/keyring"
+	"strings"
 )
 
 // Project represents a project in a workspace
@@ -101,7 +102,7 @@ func (s *Service) Create(name, description string) (*Project, error) {
 		return nil, fmt.Errorf("create project: decode: %w", err)
 	}
 
-	// Bind locally matching SecretsCLI behavior
+	// Bind locally 
 	if err := s.bindLocally(&result.Data); err != nil {
 		return nil, fmt.Errorf("create project: bind: %w", err)
 	}
@@ -320,7 +321,7 @@ func (s *Service) Invite(email, role string) error {
 	}
 
 	var newWorkspaceKey []byte
-	isMigrating := ws.Type == "personal" || ws.Type == ""
+	isMigrating := strings.EqualFold(ws.Type, "personal") || ws.Type == ""
 
 	if isMigrating {
 		// Needs migration: Generate a new key and re-encrypt all secrets
@@ -342,42 +343,53 @@ func (s *Service) Invite(email, role string) error {
 		data["encrypted_workspace_key_owner"] = base64.StdEncoding.EncodeToString(encForOwner)
 		data["encrypted_workspace_key_invitee"] = base64.StdEncoding.EncodeToString(encForInvitee)
 
-		// Fetch current secrets and re-encrypt them with the NEW key
-		scrtResp, err := s.API.Call("secrets.list", "GET", nil, map[string]string{"project_id": project.ProjectID}, nil)
+		oldWsKeyRaw, err := config.GetWorkspaceKey(workspaceID)
 		if err != nil {
-			return fmt.Errorf("failed to list current secrets for migration: %w", err)
+			return fmt.Errorf("failed to load old workspace key: %w", err)
 		}
-		defer scrtResp.Body.Close()
+		
+		apiSecrets := []map[string]string{}
+		environments := []string{"development", "staging", "production"}
 
-		var scrtRes struct {
-			Data struct {
-				Secrets []struct {
-					Key   string `json:"key"`
-					Value string `json:"value"`
-				} `json:"secrets"`
-			} `json:"data"`
-		}
-		if err := json.NewDecoder(scrtResp.Body).Decode(&scrtRes); err != nil {
-			return fmt.Errorf("failed to decode secrets for migration: %w", err)
-		}
-
-		oldWsKeyRaw, err := base64.StdEncoding.DecodeString(ws.Key)
-		if err != nil {
-			return fmt.Errorf("failed to decode old workspace key: %w", err)
-		}
-		var apiSecrets []map[string]string
-
-		for _, secret := range scrtRes.Data.Secrets {
-			plaintext, err := crypto.DecryptSecret(secret.Value, oldWsKeyRaw)
+		for _, env := range environments {
+			scrtResp, err := s.API.Call("secrets.list", "GET", nil, map[string]string{"project_id": project.ProjectID}, map[string]string{"environment": env})
 			if err != nil {
-				continue // Skip failing secrets realistically
+				continue // Skip environments that fail or don't exist
 			}
-			newEncrypted, err := crypto.EncryptSecret(plaintext, newWorkspaceKey)
-			if err != nil {
-				return fmt.Errorf("failed to re-encrypt secret %q: %w", secret.Key, err)
+			
+			var scrtRes struct {
+				Data struct {
+					Secrets []struct {
+						Key   string `json:"key"`
+						Value string `json:"value"`
+					} `json:"secrets"`
+				} `json:"data"`
 			}
-			apiSecrets = append(apiSecrets, map[string]string{"key": secret.Key, "value": newEncrypted})
+			
+			if err := json.NewDecoder(scrtResp.Body).Decode(&scrtRes); err != nil {
+				scrtResp.Body.Close()
+				continue
+			}
+			scrtResp.Body.Close()
+
+			for _, secret := range scrtRes.Data.Secrets {
+				plaintext, err := crypto.DecryptSecret(secret.Value, oldWsKeyRaw)
+				if err != nil {
+					return fmt.Errorf("failed to decrypt secret %q in %s: %w", secret.Key, env, err)
+				}
+				newEncrypted, err := crypto.EncryptSecret(plaintext, newWorkspaceKey)
+				if err != nil {
+					return fmt.Errorf("failed to re-encrypt secret %q in %s: %w", secret.Key, env, err)
+				}
+				
+				apiSecrets = append(apiSecrets, map[string]string{
+					"key":         secret.Key,
+					"value":       newEncrypted,
+					"environment": env,
+				})
+			}
 		}
+
 		data["secrets"] = apiSecrets
 
 	} else {

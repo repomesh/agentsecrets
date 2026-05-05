@@ -11,6 +11,7 @@ import (
 	"github.com/The-17/agentsecrets/pkg/config"
 	"github.com/The-17/agentsecrets/pkg/proxy"
 	"github.com/The-17/agentsecrets/pkg/secrets"
+	"github.com/The-17/agentsecrets/pkg/telemetry"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -31,6 +32,7 @@ func NewServer() *server.MCPServer {
 
 // Serve starts the MCP server on stdio (for Claude Desktop, Cursor, etc).
 func Serve() error {
+	telemetry.RecordIntegration("mcp")
 	s := NewServer()
 	return server.ServeStdio(s)
 }

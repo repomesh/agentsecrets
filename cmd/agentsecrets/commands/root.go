@@ -8,9 +8,12 @@ import (
 	"github.com/The-17/agentsecrets/pkg/auth"
 	"github.com/The-17/agentsecrets/pkg/config"
 	"github.com/The-17/agentsecrets/pkg/keychainauth"
+	"github.com/The-17/agentsecrets/pkg/telemetry"
 	"github.com/The-17/agentsecrets/pkg/ui"
 	"github.com/The-17/agentsecrets/pkg/workspaces"
+	"errors"
 	"fmt"
+	"os"
 )
 
 // Version is set at build time via ldflags
@@ -55,6 +58,16 @@ func Execute() error {
 		ui.Divider()
 		fmt.Println()
 	}
+
+	// Record telemetry for the executed command
+	cmdName := "root"
+	if len(os.Args) > 1 {
+		cmdName = os.Args[1]
+	}
+	telemetry.RecordCommand(cmdName)
+
+	// Sync telemetry in background if 24 hours have passed
+	defer telemetry.SyncIfDue(apiClient, Version)
 
 	return rootCmd.Execute()
 }
@@ -142,7 +155,19 @@ func keychainAuthMiddleware(cmd *cobra.Command, args []string) error {
 	}
 
 	// Step 4: Establish the session
-	if err := keychainauth.Init(); err != nil {
+	err := keychainauth.Init()
+	if err != nil {
+		// If the binary hash changed (e.g. after rebuild), re-register and restart daemon
+		var rejected *keychainauth.SessionRejectedError
+		if errors.As(err, &rejected) && rejected.IsHashMismatch() {
+			keychainauth.Close()
+			// Re-register, then restart daemon so it reloads the config
+			_ = keychainauth.AutoSetup()
+			_ = keychainauth.RestartDaemon()
+			err = keychainauth.Init()
+		}
+	}
+	if err != nil {
 		return fmt.Errorf("%s", keychainauth.UserMessage(err))
 	}
 

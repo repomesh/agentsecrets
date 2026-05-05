@@ -1,17 +1,31 @@
 package keychainauth
 
-// defaultSocketPath is the hardcoded Unix socket path for keychain-auth.
-//
-// This is intentionally NOT configurable. The integration spec (§7) explicitly
-// prohibits making the socket path configurable in v1 because configuration
-// introduces surface area for misconfiguration attacks. A compromised config
-// could redirect AgentSecrets to a rogue socket that impersonates keychain-auth.
-//
-// Both platforms use the same path. This matches keychain-auth's
-// internal/config/paths_linux.go and paths_darwin.go DefaultSocketPath().
-const defaultSocketPath = "/var/run/keychain-auth/agent.sock"
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+)
 
 // SocketPath returns the keychain-auth Unix socket path.
+// It uses platform-specific, user-writable directories to avoid permission issues.
 func SocketPath() string {
-	return defaultSocketPath
+	if runtime.GOOS == "darwin" {
+		return filepath.Join(os.Getenv("HOME"), "Library", "Application Support", "keychain-auth", "agent.sock")
+	}
+
+	// Linux / WSL
+	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
+	if runtimeDir != "" {
+		// Verify the directory actually exists (WSL often exports this env var but the directory
+		// isn't created by systemd, leading to permission denied when we try to MkdirAll later).
+		if info, err := os.Stat(runtimeDir); err != nil || !info.IsDir() {
+			runtimeDir = ""
+		}
+	}
+	
+	if runtimeDir == "" {
+		// Fallback to home-based cache dir
+		runtimeDir = filepath.Join(os.Getenv("HOME"), ".cache")
+	}
+	return filepath.Join(runtimeDir, "keychain-auth", "agent.sock")
 }

@@ -147,7 +147,7 @@ func runWorkspaceSwitch(_ *cobra.Command, args []string) error {
 		// Name provided — find it directly.
 		name := args[0]
 		for id, ws := range cfg.Workspaces {
-			if ws.Name == name || (name == "personal" && ws.Type == "personal") {
+			if ws.Name == name || (name == "personal" && strings.EqualFold(ws.Type, "personal")) {
 				selectedID = id
 				break
 			}
@@ -211,6 +211,15 @@ func runWorkspaceInvite(_ *cobra.Command, args []string) error {
 	workspaceID, err := requireWorkspaceID()
 	if err != nil {
 		return err
+	}
+
+	// Hard-block invites to personal workspaces
+	cfg, err := config.LoadGlobalConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+	if ws, ok := cfg.Workspaces[workspaceID]; ok && strings.EqualFold(ws.Type, "personal") {
+		return fmt.Errorf("Cannot invite members to a personal workspace.\nUse 'agentsecrets project invite <email>' to collaborate on a specific project instead.")
 	}
 
 	email := firstArg(args)
@@ -307,7 +316,11 @@ func runWorkspaceRemove(_ *cobra.Command, args []string) error {
 	}
 
 	if err := ui.Spinner(fmt.Sprintf("Removing %s...", email), func() error {
-		return workspaceService.RemoveMember(workspaceID, email)
+		userID, err := getMemberUserID(workspaceID, email)
+		if err != nil {
+			return err
+		}
+		return workspaceService.RemoveMember(workspaceID, userID)
 	}); err != nil {
 		return err
 	}
@@ -324,11 +337,11 @@ func getMemberUserID(workspaceID, email string) (string, error) {
 
 	for _, m := range members {
 		if strings.EqualFold(m.Email, email) {
-			if m.ID != "" {
-				return m.ID, nil
-			}
 			if m.UserID != "" {
 				return m.UserID, nil
+			}
+			if m.ID != "" {
+				return m.ID, nil
 			}
 		}
 	}

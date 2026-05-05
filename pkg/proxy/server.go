@@ -35,6 +35,17 @@ func NewServer(port int, engine *Engine) *Server {
 // Start begins listening and serving. This blocks until the server is stopped.
 func (s *Server) Start() error {
 	addr := fmt.Sprintf("localhost:%d", s.Port)
+
+	// Launch background sync worker if audit logger is present
+	if s.Engine.Audit != nil {
+		go func() {
+			for {
+				time.Sleep(60 * time.Second)
+				_ = s.Engine.Audit.SyncUnpushedLogs()
+			}
+		}()
+	}
+
 	return http.ListenAndServe(addr, s.mux)
 }
 

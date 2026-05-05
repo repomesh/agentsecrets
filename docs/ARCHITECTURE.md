@@ -279,11 +279,13 @@ This file lives in the project directory (alongside your code). It links the dir
 | `pkg/auth/` | JWT management + automatic token refresh middleware |
 | `pkg/config/` | Global and project config load/save/validation |
 | `pkg/crypto/` | All encryption/decryption: X25519, AES-256-GCM, Argon2id |
+| `pkg/keychainauth/` | keychain-auth daemon integration: session lifecycle, auto-setup, binary registration |
 | `pkg/keyring/` | OS keychain read/write for secrets and auth tokens |
 | `pkg/mcp/` | MCP server implementation (tools: api_call, list_secrets) |
 | `pkg/projects/` | Project API wrappers |
 | `pkg/proxy/` | HTTP proxy engine, injector, allowlist enforcement, redaction, audit |
 | `pkg/secrets/` | Secret management, dotenv parsing, diff computation |
+| `pkg/telemetry/` | Local usage tracking with periodic background sync to internal API |
 | `pkg/ui/` | Terminal UI components (spinner, table, prompts) |
 | `pkg/workspaces/` | Workspace API wrappers + allowlist management |
 
@@ -301,3 +303,74 @@ This file lives in the project directory (alongside your code). It links the dir
 | Audit log can't contain values | `AuditEvent` struct has no value field |
 | Proxy not exposed to network | Binds to `127.0.0.1` only |
 | MCP not exposed to network | Uses stdio transport, no TCP port |
+| Unauthorized process can't read secrets | keychain-auth verifies binary hash + PID before granting keychain access |
+| Personal workspaces can't be shared | CLI blocks `workspace invite` on personal workspaces; use `project invite` instead |
+
+---
+
+## keychain-auth (Process-Level Verification)
+
+keychain-auth is a standalone daemon that mediates all secret reads between AgentSecrets and the OS keychain. It prevents unauthorized processes from accessing stored credentials.
+
+### How It Works
+
+```
+agentsecrets secrets pull
+  │
+  ├─ Connect to keychain-auth Unix socket
+  ├─ Send SESSION_INIT: {pid, binary_path, binary_hash, protocol_version}
+  │
+  ├─ keychain-auth verifies:
+  │   1. Binary hash matches a registered trusted binary
+  │   2. PID corresponds to the claimed binary path
+  │   3. Protocol version is supported
+  │
+  ├─ SESSION_ACCEPTED → session token granted (in-memory only)
+  │   or
+  └─ SESSION_REJECTED → access denied with reason code
+```
+
+### Auto-Setup
+
+The first time a user runs a command that needs secrets, AgentSecrets automatically:
+
+1. Installs keychain-auth via Homebrew (`brew install The-17/tap/keychain-auth`)
+2. Registers the AgentSecrets binary hash (`keychain-auth register ./agentsecrets`)
+3. Starts the daemon with `--socket` pointing to a user-writable directory
+4. Establishes a session
+
+If the binary hash changes (e.g., after a rebuild or upgrade), the CLI automatically re-registers and restarts the daemon.
+
+### Socket Location
+
+| Platform | Path |
+|---|---|
+| Linux / WSL | `$XDG_RUNTIME_DIR/keychain-auth/agent.sock` (fallback: `~/.cache/keychain-auth/agent.sock`) |
+| macOS | `~/Library/Application Support/keychain-auth/agent.sock` |
+
+### Security Properties
+
+- The socket file is `0600` (owner-only read/write)
+- Session tokens are in-memory only — never written to disk
+- Binary hashes are computed fresh on every invocation — never cached
+- Registration is idempotent — re-registering the same hash is a no-op
+
+---
+
+## Telemetry
+
+AgentSecrets collects anonymous, non-sensitive usage metrics to understand how the CLI is used. No secret values, project names, or personal data are collected.
+
+### What Is Collected
+
+- Command execution counts (e.g., `secrets: 15, workspace: 3, call: 7`)
+- OS and architecture
+- CLI version
+- Active environment name
+
+### How It Works
+
+1. Each command execution increments a counter in `~/.agentsecrets/telemetry.json`
+2. Every 24 hours, the counters are pushed to the internal API
+3. On successful sync, counters are reset to zero
+4. The sync runs during CLI exit — it never blocks normal command execution

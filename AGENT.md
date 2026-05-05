@@ -42,11 +42,13 @@ agentsecrets/
 │   ├── auth/                      # Authentication + JWT middleware
 │   ├── config/                    # Global config + project config
 │   ├── crypto/                    # X25519 + AES-256-GCM + Argon2id
+│   ├── keychainauth/              # keychain-auth daemon integration
 │   ├── keyring/                   # OS keychain integration
 │   ├── mcp/                       # MCP server implementation
 │   ├── projects/                  # Project API wrappers
 │   ├── proxy/                     # HTTP proxy + audit logging
 │   ├── secrets/                   # Secret management + dotenv
+│   ├── telemetry/                 # Local usage tracking + background sync
 │   ├── ui/                        # Terminal UI components
 │   └── workspaces/                # Workspace API wrappers
 ├── integrations/
@@ -81,6 +83,7 @@ agentsecrets/
 | Transport | HTTPS / TLS |
 | Cloud server | Zero-knowledge — stores encrypted blobs, cannot decrypt |
 | Proxy | Session token, SSRF protection, redirect stripping |
+| Process verification | keychain-auth daemon — binary hash + PID verification before granting keychain access |
 | Audit log | No value field in struct — structurally cannot log credential values |
 
 ### Zero-Knowledge Guarantee
@@ -167,6 +170,14 @@ Global config at `~/.agentsecrets/config.json` — stores active workspace, auth
 
 HTTP proxy implementation. Handles the 6 auth injection styles, domain allowlist enforcement, response body redaction, SSRF protection, redirect stripping, session token validation, JSONL audit logging.
 
+### `pkg/keychainauth`
+
+keychain-auth daemon integration. Manages the full lifecycle: auto-install via Homebrew, binary registration, daemon startup with user-writable socket path, session handshake, and automatic recovery from hash mismatches after binary updates.
+
+### `pkg/telemetry`
+
+Local usage tracking. Records command execution counts to `~/.agentsecrets/telemetry.json` and syncs them to the internal API every 24 hours during CLI exit. No secret values or personal data are collected.
+
 ---
 
 ## CLI Command Surface
@@ -185,6 +196,8 @@ agentsecrets workspace create "Name"
 agentsecrets workspace list
 agentsecrets workspace switch "Name"
 agentsecrets workspace invite user@email.com
+agentsecrets workspace remove user@email.com
+agentsecrets workspace members
 agentsecrets workspace promote user@email.com   # Grant admin role
 agentsecrets workspace demote user@email.com     # Revoke admin role
 ```

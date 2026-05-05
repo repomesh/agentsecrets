@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/The-17/agentsecrets/pkg/api"
 	"github.com/The-17/agentsecrets/pkg/config"
@@ -206,10 +207,10 @@ func (s *Service) PerformLogin(email, password string, privateKey, publicKey []b
 	if config.GetSelectedWorkspaceID() == "" {
 		id := ""
 		for k, ws := range workspaceCache {
-			if id == "" || ws.Type == "personal" {
+			if id == "" || strings.EqualFold(ws.Type, "personal") {
 				id = k
 			}
-			if ws.Type == "personal" {
+			if strings.EqualFold(ws.Type, "personal") {
 				break
 			}
 		}

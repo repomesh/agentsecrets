@@ -503,7 +503,7 @@ func runSecretsDiff(cmd *cobra.Command, args []string) error {
 			}
 		}
 		if !found {
-			remoteOnlyAllowlist = append(remoteOnlyAllowlist, fmt.Sprintf("%s (added by %s)", r.Domain, r.AddedBy))
+			remoteOnlyAllowlist = append(remoteOnlyAllowlist, r.Domain)
 			allowlistDrift = true
 		}
 	}
