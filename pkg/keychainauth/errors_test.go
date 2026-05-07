@@ -13,7 +13,7 @@ func TestUserMessage_SessionRejected(t *testing.T) {
 	}{
 		{reasonHashMismatch, "Security check failed: AgentSecrets binary has been modified. Reinstall to continue."},
 		{reasonInvalidPID, "keychain-auth could not verify this process. Try again or reinstall AgentSecrets."},
-		{reasonPathMismatch, "keychain-auth rejected this binary path. Ensure AgentSecrets is installed in the expected location."},
+		{reasonPathMismatch, "keychain-auth does not recognize this binary location. Run 'agentsecrets init' to re-register, or reinstall AgentSecrets."},
 		{reasonUnsupportedProtocol, "keychain-auth version is incompatible. Run: keychain-auth upgrade"},
 		{rejectReason("UNKNOWN_REASON"), "keychain-auth rejected the session: UNKNOWN_REASON"},
 	}

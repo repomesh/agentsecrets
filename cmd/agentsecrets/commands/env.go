@@ -13,7 +13,6 @@ import (
 
 	"github.com/The-17/agentsecrets/pkg/ui"
 	"github.com/The-17/agentsecrets/pkg/config"
-	"github.com/The-17/agentsecrets/pkg/keychainauth"
 	"github.com/The-17/agentsecrets/pkg/keyring"
 	"github.com/The-17/agentsecrets/pkg/proxy"
 	"github.com/The-17/agentsecrets/pkg/telemetry"
@@ -160,6 +159,10 @@ func auditLog(project *config.ProjectConfig, cmdArgs []string, secretKeys []stri
 // ensureKeychainAuthForEnv establishes a keychain-auth session for commands
 // that use DisableFlagParsing (env, exec) and therefore skip PersistentPreRunE.
 func ensureKeychainAuthForEnv() error {
+	// keychain-auth integration is temporarily disabled in v1.2.0
+	return nil
+
+	/*
 	if keychainauth.IsInitialized() {
 		return nil
 	}
@@ -184,5 +187,6 @@ func ensureKeychainAuthForEnv() error {
 		return fmt.Errorf("%s", keychainauth.UserMessage(err))
 	}
 	return nil
+	*/
 }
 

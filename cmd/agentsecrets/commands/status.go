@@ -2,13 +2,13 @@ package commands
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/dustin/go-humanize"
 
 	"github.com/The-17/agentsecrets/pkg/config"
-	"github.com/The-17/agentsecrets/pkg/keychainauth"
 	"github.com/The-17/agentsecrets/pkg/ui"
 )
 
@@ -40,6 +40,45 @@ var statusCmd = &cobra.Command{
 		email := config.GetEmail()
 		ui.StatusRow("Logged in as:", email)
 
+		// Token Health
+		tokens, _ := config.LoadTokens()
+		if tokens != nil {
+			// Check Access Token
+			if tokens.ExpiresAt != "" {
+				exp, err := time.Parse(time.RFC3339, tokens.ExpiresAt)
+				if err == nil {
+					timeUntil := time.Until(exp)
+					if timeUntil <= 0 {
+						if tokens.RefreshToken != "" {
+							ui.StatusRow("Session:", "Expired — will auto-refresh on next command")
+						} else {
+							ui.StatusRow("Session:", "Expired — run 'agentsecrets login'")
+						}
+					} else if timeUntil < 5*time.Minute {
+						// e.g., "in 3 minutes" -> "3 minutes" by stripping "in "
+						timeLeft := humanize.Time(exp)
+						if strings.HasPrefix(timeLeft, "in ") {
+							timeLeft = timeLeft[3:]
+						}
+						ui.StatusRow("Session:", fmt.Sprintf("Expiring Soon (%s left) — will auto-refresh on next command", timeLeft))
+					} else {
+						ui.StatusRow("Session:", fmt.Sprintf("Active (expires %s)", humanize.Time(exp)))
+					}
+				} else {
+					ui.StatusRowDim("Session:", "Unknown expiry")
+				}
+			} else {
+				ui.StatusRowDim("Session:", "Unknown expiry")
+			}
+
+			// Check Refresh Token
+			if tokens.RefreshToken != "" {
+				ui.StatusRow("Refresh Token:", "Available")
+			} else {
+				ui.StatusRow("Refresh Token:", "Missing")
+			}
+		}
+
 		// Workspace info
 		wsID := config.GetSelectedWorkspaceID()
 		global, _ := config.LoadGlobalConfig()
@@ -62,12 +101,7 @@ var statusCmd = &cobra.Command{
 			ui.StatusRow("Selected Workspace:", wsDisplay)
 		}
 
-		// Keychain-auth daemon status
-		if keychainauth.IsAvailable() {
-			ui.StatusRow("keychain-auth:", "running")
-		} else {
-			ui.StatusRowDim("keychain-auth:", "not running — run 'agentsecrets init' to set up")
-		}
+
 
 		// Environment info
 		env, source := config.ResolveEnvironmentWithSource()

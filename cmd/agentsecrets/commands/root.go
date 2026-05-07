@@ -7,11 +7,9 @@ import (
 	"github.com/The-17/agentsecrets/pkg/api"
 	"github.com/The-17/agentsecrets/pkg/auth"
 	"github.com/The-17/agentsecrets/pkg/config"
-	"github.com/The-17/agentsecrets/pkg/keychainauth"
 	"github.com/The-17/agentsecrets/pkg/telemetry"
 	"github.com/The-17/agentsecrets/pkg/ui"
 	"github.com/The-17/agentsecrets/pkg/workspaces"
-	"errors"
 	"fmt"
 	"os"
 )
@@ -48,7 +46,7 @@ var rootCmd = &cobra.Command{
 
 func Execute() error {
 	// Ensure keychain-auth socket is closed on exit
-	defer keychainauth.Close()
+	// defer keychainauth.Close()
 
 	// Run update check. It's efficient (24h interval) and has a short timeout.
 	if res, _ := config.CheckForUpdates(Version); res != nil && res.NewVersionAvailable {
@@ -95,10 +93,11 @@ func init() {
 	projectCmd.PersistentPreRunE = authService.EnsureAuth
 	environmentCmd.PersistentPreRunE = authService.EnsureAuth
 
-	// Commands that read secrets need both auth AND keychain-auth session.
-	// The keychainAuthMiddleware chains EnsureAuth → keychainauth.Init().
+	// Commands that read secrets or display sensitive info need auth verification.
+	// The keychainAuthMiddleware (currently auth-only) handles this.
 	secretsCmd.PersistentPreRunE = keychainAuthMiddleware
 	callCmd.PersistentPreRunE = keychainAuthMiddleware
+	statusCmd.PersistentPreRunE = keychainAuthMiddleware
 
 	rootCmd.AddCommand(workspaceCmd)
 	rootCmd.AddCommand(projectCmd)
@@ -126,6 +125,12 @@ func keychainAuthMiddleware(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// keychain-auth integration is temporarily disabled in v1.2.0 
+	// to ensure cross-platform stability (Windows support).
+	// We will revert to direct keyring access for now.
+	return nil
+
+	/*
 	// Step 2: Skip if session already established (e.g. parent command already ran this)
 	if keychainauth.IsInitialized() {
 		return nil
@@ -154,12 +159,11 @@ func keychainAuthMiddleware(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 	}
 
-	// Step 4: Establish the session
 	err := keychainauth.Init()
 	if err != nil {
-		// If the binary hash changed (e.g. after rebuild), re-register and restart daemon
+		// If the binary hash or path changed (e.g. after rebuild or Homebrew upgrade), re-register and restart daemon
 		var rejected *keychainauth.SessionRejectedError
-		if errors.As(err, &rejected) && rejected.IsHashMismatch() {
+		if errors.As(err, &rejected) && (rejected.IsHashMismatch() || rejected.IsPathMismatch()) {
 			keychainauth.Close()
 			// Re-register, then restart daemon so it reloads the config
 			_ = keychainauth.AutoSetup()
@@ -172,4 +176,5 @@ func keychainAuthMiddleware(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+	*/
 }

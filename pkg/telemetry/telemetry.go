@@ -20,12 +20,12 @@ type Data struct {
 	OS                   string         `json:"os,omitempty"`
 	Arch                 string         `json:"arch,omitempty"`
 	ActiveEnvironment    string         `json:"active_environment,omitempty"`
-	ProjectSecretCount   int            `json:"project_secret_count,omitempty"`
+	ProjectSecretCount   int            `json:"project_secret_count"`
 	WorkspaceType        string         `json:"workspace_type,omitempty"`
-	WorkspaceMemberCount int            `json:"workspace_member_count,omitempty"`
-	ProxyCalls           int            `json:"proxy_calls,omitempty"`
-	ProxyBlocked         int            `json:"proxy_blocked,omitempty"`
-	ProxyRedacted        int            `json:"proxy_redacted,omitempty"`
+	WorkspaceMemberCount int            `json:"workspace_member_count"`
+	ProxyCalls           int            `json:"proxy_calls"`
+	ProxyBlocked         int            `json:"proxy_blocked"`
+	ProxyRedacted        int            `json:"proxy_redacted"`
 	InjectionStylesUsed  []string       `json:"injection_styles_used,omitempty"`
 	IntegrationsActive   []string       `json:"integrations_active,omitempty"`
 }

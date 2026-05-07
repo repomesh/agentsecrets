@@ -22,6 +22,7 @@ var (
 	pullForce      bool
 	pushForce      bool
 	allEnvs        bool
+	listRemote     bool
 	diffFrom       string
 	diffTo         string
 )
@@ -85,6 +86,7 @@ var secretsDiffCmd = &cobra.Command{
 func init() {
 	secretsPullCmd.Flags().BoolVarP(&pullForce, "force", "f", false, "Overwrite local changes without prompting")
 	secretsPushCmd.Flags().BoolVarP(&pushForce, "force", "f", false, "Push without prompting for missing keys")
+	secretsListCmd.Flags().BoolVar(&listRemote, "remote", false, "Fetch latest keys from the cloud instead of local cache")
 	secretsSetCmd.Flags().BoolVar(&allEnvs, "all-envs", false, "Set in all three environments simultaneously")
 	secretsDiffCmd.Flags().StringVar(&diffFrom, "from", "", "Source environment for cross-environment diff")
 	secretsDiffCmd.Flags().StringVar(&diffTo, "to", "", "Target environment for cross-environment diff")
@@ -167,6 +169,69 @@ func runSecretsGet(cmd *cobra.Command, args []string) error {
 }
 
 func runSecretsList(cmd *cobra.Command, args []string) error {
+	if listRemote {
+		return runSecretsListRemote(cmd, args)
+	}
+
+	project, err := config.LoadProjectConfig()
+	if err != nil || project == nil || project.ProjectID == "" {
+		return fmt.Errorf("no project configured in current directory")
+	}
+
+	activeEnv := config.ResolveEnvironment()
+	envs := []string{"development", "staging", "production"}
+
+	presence := make(map[string][3]bool)
+	allKeysSet := make(map[string]bool)
+
+	for i, env := range envs {
+		keys := keyring.ListProjectKeyNames(project.ProjectID, env)
+		for _, k := range keys {
+			p := presence[k]
+			p[i] = true
+			presence[k] = p
+			allKeysSet[k] = true
+		}
+	}
+
+	if len(allKeysSet) == 0 {
+		fmt.Printf("\n%s\n", ui.WarningStyle.Render(fmt.Sprintf("! No secrets found locally in any environment.")))
+		fmt.Printf("Use %s to fetch from cloud or %s to add one.\n\n", ui.BrandStyle.Render("agentsecrets secrets pull"), ui.BrandStyle.Render("agentsecrets secrets set KEY=VALUE"))
+		return nil
+	}
+
+	// Sort keys
+	var sortedKeys []string
+	for k := range allKeysSet {
+		sortedKeys = append(sortedKeys, k)
+	}
+	sort.Strings(sortedKeys)
+
+	headers := []string{"Key", "DEV", "STAGING", "PROD"}
+	rows := make([][]string, len(sortedKeys))
+
+	for i, k := range sortedKeys {
+		p := presence[k]
+		row := []string{ui.BrandStyle.Render(k)}
+		
+		for j := 0; j < 3; j++ {
+			if p[j] {
+				row = append(row, ui.SuccessStyle.Render("*"))
+			} else {
+				row = append(row, ui.DimStyle.Render("-"))
+			}
+		}
+		rows[i] = row
+	}
+
+	fmt.Printf("\nEnvironment: %s\n\n", ui.BrandStyle.Render(activeEnv))
+	fmt.Println(ui.RenderTable(headers, rows))
+	fmt.Println()
+	ui.Info("Showing cached keys. Use --remote for latest from cloud.")
+	return nil
+}
+
+func runSecretsListRemote(cmd *cobra.Command, args []string) error {
 	activeEnv := config.ResolveEnvironment()
 	envs := []string{"development", "staging", "production"}
 

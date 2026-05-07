@@ -1,10 +1,8 @@
 // Package keyring handles secure storage of cryptographic keys and secrets.
 //
-// Secret reads are routed through keychain-auth — a standalone daemon that
-// verifies process identity before granting access to OS keychain entries.
-// Secret writes, deletes, keypair operations, and allowlist management
-// remain direct (via go-keyring) because they don't require the same
-// security posture as reads.
+// Secret reads and writes are performed directly via the OS keychain (go-keyring).
+// On Linux/WSL (where D-Bus Secret Service is typically unavailable),
+// storage falls back to file-based storage in ~/.agentsecrets/keyring.json.
 //
 // On Linux/WSL (where D-Bus Secret Service is typically unavailable),
 // keypair storage falls back to file-based storage in ~/.agentsecrets/keyring.json.
@@ -24,8 +22,6 @@ import (
 	"strings"
 
 	gokeyring "github.com/zalando/go-keyring"
-
-	"github.com/The-17/agentsecrets/pkg/keychainauth"
 )
 
 const serviceName = "AgentSecrets"
@@ -224,20 +220,42 @@ func SetSecret(projectID, environment, key, value string) error {
 	return addKeyToIndex(projectID, environment, key)
 }
 
-// GetSecret retrieves a secret value via the keychain-auth daemon.
-//
-// All secret reads are routed through the keychain-auth Unix socket.
-// keychain-auth verifies that this process is a registered, unmodified
-// AgentSecrets binary before granting access. It also handles legacy
-// key format fallback internally.
-//
-// The caller must ensure keychainauth.Init() has been called before
-// invoking this function.
+// GetSecret retrieves a secret value directly from the OS keychain.
+// It handles legacy key format fallback for the development environment.
 func GetSecret(projectID, environment, key string) (string, error) {
 	if environment == "" {
 		environment = "development"
 	}
-	return keychainauth.GetSecret(projectID, environment, key)
+
+	name := secretKeyName(projectID, environment, key)
+	var val string
+	var err error
+
+	if useFileBackend {
+		var v []byte
+		v, err = fileGetKey(name, "private")
+		val = string(v)
+	} else {
+		val, err = gokeyring.Get(serviceName, name)
+	}
+
+	// Legacy fallback for development environment
+	if err != nil && environment == "development" {
+		legacyName := fmt.Sprintf("Secret_%s_%s", projectID, key)
+		if useFileBackend {
+			var v []byte
+			v, err = fileGetKey(legacyName, "private")
+			val = string(v)
+		} else {
+			val, err = gokeyring.Get(serviceName, legacyName)
+		}
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("secret %q not found in keyring: %w", key, err)
+	}
+
+	return val, nil
 }
 
 // DeleteSecret removes a secret from the keyring and its index.
@@ -325,6 +343,14 @@ func projectIndexName(projectID, environment string) string {
 		environment = "development"
 	}
 	return fmt.Sprintf("ProjectKeys_%s_%s", projectID, environment)
+}
+
+// ListProjectKeyNames returns the key names cached in the local index
+// for a given project and environment. This reads the key index only
+// (no secret values are accessed, no keychain-auth session required).
+// Useful for listing, .env.example generation, and count display without API calls.
+func ListProjectKeyNames(projectID, environment string) []string {
+	return getProjectKeys(projectID, environment)
 }
 
 func getProjectKeys(projectID, environment string) []string {

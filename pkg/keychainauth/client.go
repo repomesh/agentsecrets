@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -51,10 +52,19 @@ func Init() error {
 	}
 
 	// Step 3: Compute self-identity (fresh every time, never cached)
+	// Resolve symlinks so the path matches what the daemon sees via
+	// /proc/PID/exe (Linux) or proc_pidpath (macOS). On macOS, Homebrew
+	// installs to Cellar and symlinks into /opt/homebrew/bin — without
+	// resolving, the daemon sees the Cellar path but we'd send the symlink.
 	selfPath, err := os.Executable()
 	if err != nil {
 		c.Close()
 		return fmt.Errorf("keychainauth: cannot determine own executable path: %w", err)
+	}
+	selfPath, err = filepath.EvalSymlinks(selfPath)
+	if err != nil {
+		c.Close()
+		return fmt.Errorf("keychainauth: cannot resolve executable symlinks: %w", err)
 	}
 
 	selfHash, err := hashBinary(selfPath)

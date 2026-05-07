@@ -17,6 +17,11 @@ func (e *SessionRejectedError) IsHashMismatch() bool {
 	return e.Reason == reasonHashMismatch
 }
 
+// IsPathMismatch returns true if the rejection was due to a binary path mismatch (e.g. Homebrew upgrade).
+func (e *SessionRejectedError) IsPathMismatch() bool {
+	return e.Reason == reasonPathMismatch
+}
+
 // SecretDeniedError is returned when keychain-auth denies a SECRET_REQUEST.
 type SecretDeniedError struct {
 	Key    string
@@ -65,7 +70,7 @@ func sessionRejectMessage(reason rejectReason) string {
 	case reasonInvalidPID:
 		return "keychain-auth could not verify this process. Try again or reinstall AgentSecrets."
 	case reasonPathMismatch:
-		return "keychain-auth rejected this binary path. Ensure AgentSecrets is installed in the expected location."
+		return "keychain-auth does not recognize this binary location. Run 'agentsecrets init' to re-register, or reinstall AgentSecrets."
 	case reasonUnsupportedProtocol:
 		return "keychain-auth version is incompatible. Run: keychain-auth upgrade"
 	default:

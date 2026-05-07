@@ -104,6 +104,13 @@ func EnsureRegistered(keychainAuthPath string) error {
 	if err != nil {
 		return fmt.Errorf("cannot determine own binary path: %w", err)
 	}
+	// Resolve symlinks so we register the real physical path, not a symlink.
+	// On macOS, Homebrew symlinks /opt/homebrew/bin/agentsecrets → Cellar/…/bin/agentsecrets.
+	// The daemon resolves via proc_pidpath to the Cellar path, so we must register that.
+	selfPath, err = filepath.EvalSymlinks(selfPath)
+	if err != nil {
+		return fmt.Errorf("cannot resolve binary symlinks: %w", err)
+	}
 
 	cmd := exec.Command(keychainAuthPath, "register", selfPath)
 	output, err := cmd.CombinedOutput()
