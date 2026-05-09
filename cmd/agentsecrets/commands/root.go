@@ -125,7 +125,7 @@ func keychainAuthMiddleware(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// keychain-auth integration is temporarily disabled in v1.2.0 
+	// keychain-auth integration is temporarily disabled in v1.3.0 
 	// to ensure cross-platform stability (Windows support).
 	// We will revert to direct keyring access for now.
 	return nil

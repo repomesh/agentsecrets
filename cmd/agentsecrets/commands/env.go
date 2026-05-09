@@ -159,7 +159,7 @@ func auditLog(project *config.ProjectConfig, cmdArgs []string, secretKeys []stri
 // ensureKeychainAuthForEnv establishes a keychain-auth session for commands
 // that use DisableFlagParsing (env, exec) and therefore skip PersistentPreRunE.
 func ensureKeychainAuthForEnv() error {
-	// keychain-auth integration is temporarily disabled in v1.2.0
+	// keychain-auth integration is temporarily disabled in v1.3.0
 	return nil
 
 	/*

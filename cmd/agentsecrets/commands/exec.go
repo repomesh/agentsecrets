@@ -121,7 +121,7 @@ func runExec(cmd *cobra.Command, args []string) {
 // exec is a machine-to-machine protocol (stdin/stdout JSON) so we use stderr
 // for any setup messages and skip the spinner UI.
 func ensureKeychainAuthForExec() error {
-	// keychain-auth integration is temporarily disabled in v1.2.0
+	// keychain-auth integration is temporarily disabled in v1.3.0
 	return nil
 
 	/*

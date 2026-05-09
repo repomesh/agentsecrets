@@ -13,21 +13,29 @@ import (
 	"github.com/The-17/agentsecrets/pkg/config"
 )
 
-type Data struct {
-	LastSync             time.Time      `json:"last_sync"`
+type Day struct {
 	CommandExecutions    map[string]int `json:"command_executions"`
-	CliVersion           string         `json:"cli_version,omitempty"`
-	OS                   string         `json:"os,omitempty"`
-	Arch                 string         `json:"arch,omitempty"`
-	ActiveEnvironment    string         `json:"active_environment,omitempty"`
-	ProjectSecretCount   int            `json:"project_secret_count"`
-	WorkspaceType        string         `json:"workspace_type,omitempty"`
-	WorkspaceMemberCount int            `json:"workspace_member_count"`
 	ProxyCalls           int            `json:"proxy_calls"`
 	ProxyBlocked         int            `json:"proxy_blocked"`
 	ProxyRedacted        int            `json:"proxy_redacted"`
-	InjectionStylesUsed  []string       `json:"injection_styles_used,omitempty"`
-	IntegrationsActive   []string       `json:"integrations_active,omitempty"`
+	InjectionStylesUsed  []string       `json:"injection_styles_used"`
+	IntegrationsActive   []string       `json:"integrations_active"`
+
+	// Snapshot metadata for the day
+	CliVersion           string `json:"cli_version"`
+	OS                   string `json:"os"`
+	Arch                 string `json:"arch"`
+	ActiveEnvironment    string `json:"active_environment"`
+	ProjectID            string `json:"project_id,omitempty"`
+	WorkspaceID          string `json:"workspace_id,omitempty"`
+	ProjectSecretCount   int    `json:"project_secret_count"`
+	WorkspaceType        string `json:"workspace_type"`
+	WorkspaceMemberCount int    `json:"workspace_member_count"`
+}
+
+type Data struct {
+	LastSync time.Time       `json:"last_sync"`
+	Daily    map[string]*Day `json:"daily"`
 }
 
 var (
@@ -54,14 +62,14 @@ func load() error {
 	}
 
 	data = &Data{
-		CommandExecutions: make(map[string]int),
-		LastSync:          time.Now(), // Initialize to now for new users
+		Daily:    make(map[string]*Day),
+		LastSync: time.Now(),
 	}
 
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil // Use defaults
+			return nil
 		}
 		return err
 	}
@@ -74,11 +82,47 @@ func save() error {
 	if err != nil {
 		return err
 	}
-	b, err := json.Marshal(data)
+	b, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, b, 0600)
+}
+
+func today() string {
+	return time.Now().Format("2006-01-02")
+}
+
+func currentDay() *Day {
+	if data == nil {
+		_ = load()
+	}
+	if data.Daily == nil {
+		data.Daily = make(map[string]*Day)
+	}
+
+	date := today()
+	d, ok := data.Daily[date]
+	if !ok {
+		d = &Day{
+			CommandExecutions:   make(map[string]int),
+			InjectionStylesUsed: []string{},
+			IntegrationsActive:  []string{},
+			OS:                  runtime.GOOS,
+			Arch:                runtime.GOARCH,
+		}
+		data.Daily[date] = d
+	}
+
+	// Capture current context
+	if project, err := config.LoadProjectConfig(); err == nil && project != nil {
+		d.ProjectID = project.ProjectID
+	}
+	if gc, err := config.LoadGlobalConfig(); err == nil && gc != nil {
+		d.WorkspaceID = gc.SelectedWorkspaceID
+	}
+
+	return d
 }
 
 // RecordCommand increments the usage count for a CLI command.
@@ -86,15 +130,11 @@ func RecordCommand(cmdName string) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if data == nil {
-		_ = load()
+	d := currentDay()
+	if d.CommandExecutions == nil {
+		d.CommandExecutions = make(map[string]int)
 	}
-
-	if data.CommandExecutions == nil {
-		data.CommandExecutions = make(map[string]int)
-	}
-
-	data.CommandExecutions[cmdName]++
+	d.CommandExecutions[cmdName]++
 	_ = save()
 }
 
@@ -102,10 +142,7 @@ func RecordCommand(cmdName string) {
 func RecordProxyCall() {
 	mu.Lock()
 	defer mu.Unlock()
-	if data == nil {
-		_ = load()
-	}
-	data.ProxyCalls++
+	currentDay().ProxyCalls++
 	_ = save()
 }
 
@@ -113,10 +150,7 @@ func RecordProxyCall() {
 func RecordProxyBlocked() {
 	mu.Lock()
 	defer mu.Unlock()
-	if data == nil {
-		_ = load()
-	}
-	data.ProxyBlocked++
+	currentDay().ProxyBlocked++
 	_ = save()
 }
 
@@ -124,10 +158,7 @@ func RecordProxyBlocked() {
 func RecordProxyRedacted() {
 	mu.Lock()
 	defer mu.Unlock()
-	if data == nil {
-		_ = load()
-	}
-	data.ProxyRedacted++
+	currentDay().ProxyRedacted++
 	_ = save()
 }
 
@@ -135,15 +166,13 @@ func RecordProxyRedacted() {
 func RecordInjectionStyle(style string) {
 	mu.Lock()
 	defer mu.Unlock()
-	if data == nil {
-		_ = load()
-	}
-	for _, s := range data.InjectionStylesUsed {
+	d := currentDay()
+	for _, s := range d.InjectionStylesUsed {
 		if s == style {
 			return
 		}
 	}
-	data.InjectionStylesUsed = append(data.InjectionStylesUsed, style)
+	d.InjectionStylesUsed = append(d.InjectionStylesUsed, style)
 	_ = save()
 }
 
@@ -151,15 +180,29 @@ func RecordInjectionStyle(style string) {
 func RecordIntegration(name string) {
 	mu.Lock()
 	defer mu.Unlock()
-	if data == nil {
-		_ = load()
-	}
-	for _, n := range data.IntegrationsActive {
+	d := currentDay()
+	for _, n := range d.IntegrationsActive {
 		if n == name {
 			return
 		}
 	}
-	data.IntegrationsActive = append(data.IntegrationsActive, name)
+	d.IntegrationsActive = append(d.IntegrationsActive, name)
+	_ = save()
+}
+
+// RecordSecretCount records the current number of secrets in the project.
+func RecordSecretCount(count int) {
+	mu.Lock()
+	defer mu.Unlock()
+	currentDay().ProjectSecretCount = count
+	_ = save()
+}
+
+// RecordWorkspaceMemberCount records the number of members in the workspace.
+func RecordWorkspaceMemberCount(count int) {
+	mu.Lock()
+	defer mu.Unlock()
+	currentDay().WorkspaceMemberCount = count
 	_ = save()
 }
 
@@ -177,62 +220,69 @@ func SyncIfDue(client *api.Client, cliVersion string) {
 	}
 
 	if time.Since(data.LastSync) >= 24*time.Hour {
-		if len(data.CommandExecutions) == 0 {
+		if len(data.Daily) == 0 {
 			data.LastSync = time.Now()
 			_ = save()
 			return
 		}
 
-		activeEnv := config.ResolveEnvironment()
+		// Update metadata for today's bucket before syncing
+		d := currentDay()
+		d.CliVersion = cliVersion
+		d.ActiveEnvironment = config.ResolveEnvironment()
 		
 		wsType := "personal"
+		wsMemberCount := 1
 		if gc, err := config.LoadGlobalConfig(); err == nil && gc != nil {
 			if wsID := gc.SelectedWorkspaceID; wsID != "" {
-				if ws, ok := gc.Workspaces[wsID]; ok && ws.Type != "" {
-					wsType = ws.Type
+				if ws, ok := gc.Workspaces[wsID]; ok {
+					if ws.Type != "" {
+						wsType = ws.Type
+					}
+					// Note: member count might not be in config, but we can try to guess or leave as 1
+					// If we had it in config, we'd use it here.
 				}
 			}
 		}
+		d.WorkspaceType = wsType
+		d.WorkspaceMemberCount = wsMemberCount
 
-		injStyles := data.InjectionStylesUsed
-		if injStyles == nil {
-			injStyles = []string{}
-		}
-		integrations := data.IntegrationsActive
-		if integrations == nil {
-			integrations = []string{}
+		// Prepare snapshots
+		var snapshots []map[string]interface{}
+		for date, dayData := range data.Daily {
+			s := map[string]interface{}{
+				"date":                   date,
+				"command_executions":     dayData.CommandExecutions,
+				"proxy_calls":            dayData.ProxyCalls,
+				"proxy_blocked":          dayData.ProxyBlocked,
+				"proxy_redacted":         dayData.ProxyRedacted,
+				"injection_styles_used":  dayData.InjectionStylesUsed,
+				"integrations_active":    dayData.IntegrationsActive,
+				"cli_version":            dayData.CliVersion,
+				"os":                     dayData.OS,
+				"arch":                   dayData.Arch,
+				"active_environment":     dayData.ActiveEnvironment,
+				"project_id":             dayData.ProjectID,
+				"workspace_id":           dayData.WorkspaceID,
+				"project_secret_count":   dayData.ProjectSecretCount,
+				"workspace_type":         dayData.WorkspaceType,
+				"workspace_member_count": dayData.WorkspaceMemberCount,
+			}
+			snapshots = append(snapshots, s)
 		}
 
 		payload := map[string]interface{}{
-			"timestamp":                time.Now().UTC().Format(time.RFC3339),
-			"command_executions":       data.CommandExecutions,
-			"cli_version":              cliVersion,
-			"os":                       runtime.GOOS,
-			"arch":                     runtime.GOARCH,
-			"active_environment":       activeEnv,
-			"project_secret_count":     data.ProjectSecretCount,
-			"workspace_type":           wsType,
-			"workspace_member_count":   data.WorkspaceMemberCount,
-			"proxy_calls":              data.ProxyCalls,
-			"proxy_blocked":            data.ProxyBlocked,
-			"proxy_redacted":           data.ProxyRedacted,
-			"injection_styles_used":    injStyles,
-			"integrations_active":      integrations,
+			"snapshots": snapshots,
 		}
 
 		// Fire off the API call synchronously to ensure it completes before CLI exits.
-		// Since this is deferred at the very end of execution, the small delay is acceptable.
 		resp, err := client.Call("telemetry.sync", "POST", payload, nil, nil)
 		if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			// Only reset what was successfully pushed
-			data.CommandExecutions = make(map[string]int)
-			data.ProxyCalls = 0
-			data.ProxyBlocked = 0
-			data.ProxyRedacted = 0
+			// Success! Clear all synced daily buckets
+			data.Daily = make(map[string]*Day)
 			data.LastSync = time.Now()
 			_ = save()
 		} else if err == nil && resp != nil {
-			// Print the validation error to help debug the 400 Bad Request
 			if decodeErr := client.DecodeError(resp); decodeErr != nil {
 				fmt.Println("\n[DEBUG] Telemetry Sync Rejected by Backend:", decodeErr)
 			}

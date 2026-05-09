@@ -12,6 +12,7 @@ import (
 	"github.com/The-17/agentsecrets/pkg/config"
 	"github.com/The-17/agentsecrets/pkg/crypto"
 	"github.com/The-17/agentsecrets/pkg/keyring"
+	"github.com/The-17/agentsecrets/pkg/telemetry"
 )
 
 // Service coordinates all secret-related operations.
@@ -250,6 +251,8 @@ func (s *Service) Pull(targetKeys []string) error {
 		_ = keyring.SetSecret(project.ProjectID, env, s.Key, plaintext)
 	}
 
+	telemetry.RecordSecretCount(len(secretsMap))
+
 	if isSelective && len(secretsMap) == 0 {
 		// Even if empty, we want to ensure .env footprint is laid down
 	}
@@ -285,6 +288,8 @@ func (s *Service) Push() error {
 	if err != nil {
 		return err
 	}
+
+	telemetry.RecordSecretCount(len(localSecrets))
 
 	if len(localSecrets) == 0 {
 		return nil

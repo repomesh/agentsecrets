@@ -163,7 +163,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	ui.Info("Config written to .agentsecrets/project.json")
 	ui.Info("Run 'agentsecrets project create <name>' or 'agentsecrets project use <name>' to link this folder.")
 
-	// Phase 3: Setup keychain-auth daemon (Disabled in v1.2.0)
+	// Phase 3: Setup keychain-auth daemon (Disabled in v1.3.0)
 	/*
 	if err := ui.Spinner("Configuring secure keychain daemon...", func() error {
 		return keychainauth.AutoSetup()
