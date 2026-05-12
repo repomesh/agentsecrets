@@ -26,6 +26,7 @@ type Day struct {
 	OS                   string `json:"os"`
 	Arch                 string `json:"arch"`
 	ActiveEnvironment    string `json:"active_environment"`
+	UserEmail            string `json:"user_email,omitempty"`
 	ProjectID            string `json:"project_id,omitempty"`
 	WorkspaceID          string `json:"workspace_id,omitempty"`
 	ProjectSecretCount   int    `json:"project_secret_count"`
@@ -120,6 +121,9 @@ func currentDay() *Day {
 	}
 	if gc, err := config.LoadGlobalConfig(); err == nil && gc != nil {
 		d.WorkspaceID = gc.SelectedWorkspaceID
+		if gc.Email != "" {
+			d.UserEmail = gc.Email
+		}
 	}
 
 	return d
@@ -262,6 +266,7 @@ func SyncIfDue(client *api.Client, cliVersion string) {
 				"os":                     dayData.OS,
 				"arch":                   dayData.Arch,
 				"active_environment":     dayData.ActiveEnvironment,
+				"user_email":             dayData.UserEmail,
 				"project_id":             dayData.ProjectID,
 				"workspace_id":           dayData.WorkspaceID,
 				"project_secret_count":   dayData.ProjectSecretCount,

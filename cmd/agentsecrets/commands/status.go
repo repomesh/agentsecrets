@@ -122,6 +122,14 @@ var statusCmd = &cobra.Command{
 			}
 			ui.StatusRow("Current Project:", projectDisplay)
 
+			// Proxy status
+			pid, _, port, err := readPIDFile()
+			if err != nil || !isProcessAlive(pid) {
+				ui.StatusRowDim("Proxy:", "Not running")
+			} else {
+				ui.StatusRow("Proxy:", fmt.Sprintf("Running (port %d)", port))
+			}
+
 			// Sync info
 			secretsDisplay := "Unable to calculate"
 			if secretsService != nil {

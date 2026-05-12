@@ -27,7 +27,7 @@ def _get_version():
         return version("agentsecrets-cli")
     except (ImportError, PackageNotFoundError):
         latest = get_latest_github_version()
-        return latest if latest else "1.3.0"
+        return latest if latest else "1.3.1"
 
 VERSION = _get_version()
 GITHUB_REPO = "The-17/agentsecrets"
