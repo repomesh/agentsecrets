@@ -169,7 +169,11 @@ func runProxyStart(cmd *cobra.Command, args []string) error {
 	// Load project context
 	project, err := config.LoadProjectConfig()
 	if err != nil || project.ProjectID == "" {
-		ui.Error("No project found. Run 'agentsecrets project use <name>' first.")
+		ui.ErrorWithSuggestions(
+			fmt.Errorf("No active project link found in the current directory"),
+			"Run 'agentsecrets project use' to select and link an existing project.",
+			"Run 'agentsecrets project create <name>' to create and link a new project.",
+		)
 		return nil
 	}
 
@@ -179,7 +183,11 @@ func runProxyStart(cmd *cobra.Command, args []string) error {
 
 	engine, err := proxy.NewEngine(project.ProjectID)
 	if err != nil {
-		ui.Error(fmt.Sprintf("Failed to initialize proxy engine: %v", err))
+		ui.ErrorWithSuggestions(
+			fmt.Errorf("Failed to initialize proxy engine: %w", err),
+			"Verify that your local credentials and workspace keys are synced: 'agentsecrets secrets pull'.",
+			"Check if there are conflicts in your local configuration or storage.",
+		)
 		return nil
 	}
 

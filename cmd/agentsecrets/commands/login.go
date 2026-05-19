@@ -66,7 +66,12 @@ func performLogin() error {
 	if err := ui.Spinner("Logging in...", func() error {
 		return authService.PerformLogin(email, password, nil, nil)
 	}); err != nil {
-		ui.Error("Login failed: " + err.Error())
+		ui.ErrorWithSuggestions(
+			fmt.Errorf("Login failed: %w", err),
+			"Double check your email spelling and password.",
+			"If you don't have an account, run 'agentsecrets init' to sign up.",
+			"Verify that the AgentSecrets API endpoint is accessible from your network.",
+		)
 		return nil
 	}
 

@@ -33,6 +33,7 @@ type GlobalConfig struct {
 	DefaultStorageMode   int                         `json:"default_storage_mode"` // 1 = keychain (default), 2 = env_file
 	LastUpdateCheck      int64                       `json:"last_update_check,omitempty"`
 	LatestVersion        string                      `json:"latest_version,omitempty"`
+	LastUpdateAlert      int64                       `json:"last_update_alert,omitempty"`
 }
 
 // WorkspaceCacheEntry is a cached workspace with its decrypted key

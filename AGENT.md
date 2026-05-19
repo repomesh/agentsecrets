@@ -339,4 +339,4 @@ agentsecrets env -- node server.js
 - Deep Dive Series: https://engineering.theseventeen.co/series/building-agentsecrets
 - GitHub: https://github.com/The-17/agentsecrets
 - ClawHub: https://clawhub.ai/SteppaCodes/agentsecrets
-- Security issues: hello@theseventeen.co (do not open public issues)
+- Security issues: engineering@theseventeen.co (do not open public issues)

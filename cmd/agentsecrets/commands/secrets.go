@@ -411,7 +411,10 @@ func runSecretsPull(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	}); err != nil {
-		ui.Error(fmt.Sprintf("Pull: %v", err))
+		ui.ErrorWithSuggestions(
+			fmt.Errorf("Pull: %w", err),
+			"Ensure your local project config is correctly linked: 'agentsecrets status'.",
+		)
 		return nil
 	}
 
@@ -478,11 +481,15 @@ func runSecretsPush(cmd *cobra.Command, args []string) error {
 	if err := ui.Spinner("Pushing secrets...", func() error {
 		return secretsService.Push()
 	}); err != nil {
-		ui.Error(fmt.Sprintf("Push: %v", err))
+		ui.ErrorWithSuggestions(
+			fmt.Errorf("Push: %w", err),
+			"Ensure you have an active network connection and are logged in.",
+			"Check that you are authorized to push to this environment (e.g. check your permissions).",
+		)
 		return nil
 	}
 
-	ui.Success("Successfully pushed .env secrets to the cloud.")
+	ui.Success("Successfully pushed local secrets to the cloud sync service.")
 
 	// 3. Delete missing keys from cloud if requested
 	if deleteFromCloud && len(diff.Removed) > 0 {

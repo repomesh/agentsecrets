@@ -212,8 +212,7 @@ agentsecrets environment merge staging production
 
 ```bash
 agentsecrets workspace create "The Seventeen Engineering"
-agentsecrets workspace invite alice@theseventeen.co
-agentsecrets workspace invite bob@theseventeen.co
+agentsecrets workspace invite alice@theseventeen.co bob@theseventeen.co
 
 agentsecrets project create payments-service
 agentsecrets project create auth-service
@@ -403,7 +402,7 @@ agentsecrets status                  # Workspace, project, environment, last syn
 agentsecrets workspace create "Name"
 agentsecrets workspace list
 agentsecrets workspace switch "Name"
-agentsecrets workspace invite user@email.com
+agentsecrets workspace invite user1@email.com user2@email.com
 agentsecrets workspace promote user@email.com
 agentsecrets workspace demote user@email.com
 agentsecrets workspace allowlist add <domain>
@@ -505,7 +504,7 @@ agentsecrets agent token revoke <id> --agent="<n>"
 ## Security
 
 Vulnerabilities: do NOT open public issues.
-Email: hello@theseventeen.co, response within 24 hours.
+Email: engineering@theseventeen.co, response within 24 hours.
 
 ---
 

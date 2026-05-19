@@ -35,16 +35,21 @@ func CheckForUpdates(currentVersion string) (*CheckResult, error) {
 
 	now := time.Now().Unix()
 	const oneDay = 24 * 60 * 60
+	const sixHours = 6 * 60 * 60
 
-	// If we checked recently, just return nil (no check performed)
+	// If we checked recently, check if a newer version is already cached
 	if now-cfg.LastUpdateCheck < oneDay {
-		// If we already have a cached latest version that's newer than current, return it
 		if cfg.LatestVersion != "" && isNewer(cfg.LatestVersion, currentVersion) {
-			return &CheckResult{
-				NewVersionAvailable: true,
-				LatestVersion:       cfg.LatestVersion,
-				CurrentVersion:      currentVersion,
-			}, nil
+			// Limit update notifications to at most once every 6 hours
+			if now-cfg.LastUpdateAlert >= sixHours {
+				cfg.LastUpdateAlert = now
+				_ = SaveGlobalConfig(cfg) // Best effort save
+				return &CheckResult{
+					NewVersionAvailable: true,
+					LatestVersion:       cfg.LatestVersion,
+					CurrentVersion:      currentVersion,
+				}, nil
+			}
 		}
 		return nil, nil
 	}
@@ -71,16 +76,19 @@ func CheckForUpdates(currentVersion string) (*CheckResult, error) {
 	// Update cache
 	cfg.LastUpdateCheck = now
 	cfg.LatestVersion = latest
-	_ = SaveGlobalConfig(cfg) // Best effort save
 
 	if isNewer(latest, currentVersion) {
-		return &CheckResult{
-			NewVersionAvailable: true,
-			LatestVersion:       latest,
-			CurrentVersion:      currentVersion,
-		}, nil
+		if now-cfg.LastUpdateAlert >= sixHours {
+			cfg.LastUpdateAlert = now
+			_ = SaveGlobalConfig(cfg) // Save cache and alert time
+			return &CheckResult{
+				NewVersionAvailable: true,
+				LatestVersion:       latest,
+				CurrentVersion:      currentVersion,
+			}, nil
+		}
 	}
-
+	_ = SaveGlobalConfig(cfg) // Just save cache
 	return nil, nil
 }
 

@@ -9,7 +9,7 @@ agentsecrets workspace list
 agentsecrets workspace create <name>
 agentsecrets workspace switch [name]
 agentsecrets workspace members
-agentsecrets workspace invite <email>
+agentsecrets workspace invite <email...>
 agentsecrets workspace remove <email>
 agentsecrets workspace promote <email>
 agentsecrets workspace demote <email>
@@ -88,21 +88,22 @@ bob@acme.com             pending   member
 ## workspace invite
 
 ```bash
-agentsecrets workspace invite alice@acme.com
+agentsecrets workspace invite alice@acme.com bob@acme.com
 ```
 
-Invites a user to the workspace. You are prompted for the role to assign (`admin` or `member`).
+Invites one or more users to the workspace simultaneously. You are prompted for the role to assign (`admin` or `member`).
+
+**This command requires:**
+- Admin or Owner role
+- Your account password (prompted interactively) to decrypt the workspace key locally
 
 **What happens cryptographically:**
-1. The CLI fetches Alice's public key from the server
-2. Re-encrypts the workspace key with Alice's public key (NaCl SealedBox)
-3. Sends the encrypted copy to the server for Alice to download at login
+1. The CLI prompts for your local password to decrypt the symmetric workspace key.
+2. The CLI concurrently fetches Alice's and Bob's public keys from the server.
+3. The CLI encrypts a copy of the workspace key for each invitee using their public key (NaCl SealedBox).
+4. Sends the encrypted envelopes to the server in a single bulk request.
 
-Alice's copy of the workspace key can only be decrypted with her private key (which is on her machine). The server never sees the plaintext workspace key.
-
-*Requires: Admin or Owner role on the current workspace.*
-
-> **Note:** Inviting to a personal workspace is blocked. Use `agentsecrets project invite <email>` instead — it automatically creates a shared workspace and migrates the project.
+When Alice and Bob accept their invitations and run `agentsecrets login`, their clients retrieve their respective envelopes, decrypting them using their local private keys to gain access to the workspace.
 
 ---
 

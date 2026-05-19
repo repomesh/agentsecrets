@@ -603,7 +603,7 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md) and [PROXY.md](docs/PROXY.md) for de
 ## Security
 
 Reporting vulnerabilities: do NOT open public issues.
-Email: hello@theseventeen.co — response within 24 hours.
+Email: engineering@theseventeen.co — response within 24 hours.
 
 ---
 

@@ -253,7 +253,14 @@ func SyncIfDue(client *api.Client, cliVersion string) {
 
 		// Prepare snapshots
 		var snapshots []map[string]interface{}
+		var syncedDates []string
+		currentDate := today()
+		
 		for date, dayData := range data.Daily {
+			if date == currentDate {
+				// Don't send incomplete telemetry for the current day
+				continue
+			}
 			s := map[string]interface{}{
 				"date":                   date,
 				"command_executions":     dayData.CommandExecutions,
@@ -274,6 +281,13 @@ func SyncIfDue(client *api.Client, cliVersion string) {
 				"workspace_member_count": dayData.WorkspaceMemberCount,
 			}
 			snapshots = append(snapshots, s)
+			syncedDates = append(syncedDates, date)
+		}
+
+		if len(snapshots) == 0 {
+			data.LastSync = time.Now()
+			_ = save()
+			return
 		}
 
 		payload := map[string]interface{}{
@@ -283,8 +297,10 @@ func SyncIfDue(client *api.Client, cliVersion string) {
 		// Fire off the API call synchronously to ensure it completes before CLI exits.
 		resp, err := client.Call("telemetry.sync", "POST", payload, nil, nil)
 		if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			// Success! Clear all synced daily buckets
-			data.Daily = make(map[string]*Day)
+			// Success! Clear only the synced daily buckets
+			for _, date := range syncedDates {
+				delete(data.Daily, date)
+			}
 			data.LastSync = time.Now()
 			_ = save()
 		} else if err == nil && resp != nil {

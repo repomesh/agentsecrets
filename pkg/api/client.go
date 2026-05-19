@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -97,7 +98,9 @@ type Client struct {
 	HTTPClient *http.Client
 	// getToken is a function that returns the current access token.
 	// This is injected so the API client doesn't depend on the config package directly.
-	getToken func() string
+	getToken  func() string
+	refreshFn func() (string, error) // dynamic callback to refresh token
+	refreshMu sync.Mutex             // guards token refresh to prevent concurrent refresh storms
 }
 
 // NewClient creates a new API client with the default base URL.
@@ -107,6 +110,11 @@ func NewClient(tokenFunc func() string) *Client {
 		HTTPClient: &http.Client{Timeout: 30 * time.Second},
 		getToken:   tokenFunc,
 	}
+}
+
+// SetRefreshTokenCallback registers the callback used to dynamically refresh expired tokens.
+func (c *Client) SetRefreshTokenCallback(f func() (string, error)) {
+	c.refreshFn = f
 }
 
 // Call makes an API request to the specified endpoint.
@@ -146,18 +154,55 @@ func (c *Client) Call(endpointKey, method string, data interface{}, urlParams ma
 		}
 	}
 
-	// Build request body
-	var body io.Reader
+	// Marshal request body once — keep jsonData around for potential retry
+	var jsonData []byte
 	if data != nil {
-		jsonData, err := json.Marshal(data)
+		jsonData, err = json.Marshal(data)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal request body: %w", err)
 		}
+	}
+
+	httpMethod := strings.ToUpper(method)
+
+	// Build and send the request
+	resp, err := c.doRequest(httpMethod, url, jsonData)
+	if err != nil {
+		return nil, err
+	}
+
+	// Auto-refresh on 401 for authenticated endpoints.
+	// Public endpoints (auth.login, auth.refresh, telemetry.sync) are excluded
+	// to prevent infinite refresh loops since auth.refresh is itself public.
+	if resp.StatusCode == 401 && !publicEndpoints[endpointKey] && c.refreshFn != nil {
+		resp.Body.Close()
+
+		// Thread-safe token refresh execution
+		c.refreshMu.Lock()
+		newToken, refreshErr := c.refreshFn()
+		c.refreshMu.Unlock()
+
+		if refreshErr != nil {
+			// Refresh failed — re-issue the original request so the caller
+			// gets a proper 401 response body to inspect.
+			return c.doRequest(httpMethod, url, jsonData)
+		}
+
+		// Retry with the freshly minted token
+		return c.doRequestWithToken(httpMethod, url, jsonData, newToken)
+	}
+
+	return resp, nil
+}
+
+// doRequest builds and sends an HTTP request, attaching the current token.
+func (c *Client) doRequest(method, url string, jsonData []byte) (*http.Response, error) {
+	var body io.Reader
+	if jsonData != nil {
 		body = bytes.NewBuffer(jsonData)
 	}
 
-	// Create HTTP request
-	req, err := http.NewRequest(strings.ToUpper(method), url, body)
+	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -165,13 +210,31 @@ func (c *Client) Call(endpointKey, method string, data interface{}, urlParams ma
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	// Add auth header if available
 	if c.getToken != nil {
 		token := c.getToken()
 		if token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 	}
+
+	return c.HTTPClient.Do(req)
+}
+
+// doRequestWithToken builds and sends an HTTP request with a specific token.
+func (c *Client) doRequestWithToken(method, url string, jsonData []byte, token string) (*http.Response, error) {
+	var body io.Reader
+	if jsonData != nil {
+		body = bytes.NewBuffer(jsonData)
+	}
+
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	return c.HTTPClient.Do(req)
 }

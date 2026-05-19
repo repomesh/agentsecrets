@@ -258,13 +258,16 @@ func runSignup() error {
 			Password:  password,
 		})
 	}); err != nil {
-		ui.Error("Signup failed: " + err.Error())
+		ui.ErrorWithSuggestions(
+			fmt.Errorf("Signup failed: %w", err),
+			"If you already have an account, run 'agentsecrets login' instead.",
+			"Check your email syntax and ensure you are not already registered.",
+			"Verify your network connection to the AgentSecrets service.",
+		)
 		return nil
 	}
 
-	fmt.Println()
 	ui.Success("Account created and logged in!")
-	ui.Info("Run 'agentsecrets status' to see your session info.")
 	return nil
 }
 

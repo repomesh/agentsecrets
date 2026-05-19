@@ -42,9 +42,12 @@ var rootCmd = &cobra.Command{
 		"",
 	),
 	Version: Version,
+	SilenceErrors: true,
+	SilenceUsage:  true,
 }
 
 func Execute() error {
+	ui.CLIVersion = Version
 	// Ensure keychain-auth socket is closed on exit
 	// defer keychainauth.Close()
 
@@ -67,7 +70,11 @@ func Execute() error {
 	// Sync telemetry in background if 24 hours have passed
 	defer telemetry.SyncIfDue(apiClient, Version)
 
-	return rootCmd.Execute()
+	if err := rootCmd.Execute(); err != nil {
+		ui.ErrorWithSuggestions(err)
+		os.Exit(1)
+	}
+	return nil
 }
 
 func init() {
@@ -82,6 +89,18 @@ func init() {
 	InitProjectService(apiClient)
 	InitSecretsService(apiClient)
 
+	// Set dynamic token refresh callback to prevent code duplication
+	apiClient.SetRefreshTokenCallback(func() (string, error) {
+		tokens, err := config.LoadTokens()
+		if err != nil || tokens.RefreshToken == "" {
+			return "", fmt.Errorf("no refresh token available")
+		}
+		if err := authService.RefreshSession(tokens.RefreshToken); err != nil {
+			return "", err
+		}
+		return config.GetAccessToken(), nil
+	})
+
 	// Register all subcommands
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(loginCmd)
@@ -92,6 +111,7 @@ func init() {
 	workspaceCmd.PersistentPreRunE = authService.EnsureAuth
 	projectCmd.PersistentPreRunE = authService.EnsureAuth
 	environmentCmd.PersistentPreRunE = authService.EnsureAuth
+	proxyCmd.PersistentPreRunE = authService.EnsureAuth
 
 	// Commands that read secrets or display sensitive info need auth verification.
 	// The keychainAuthMiddleware (currently auth-only) handles this.

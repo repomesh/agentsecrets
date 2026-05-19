@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = "MIT"
 authors = [
-    { name = "The Seventeen", email = "hello@theseventeen.co" },
+    { name = "The Seventeen", email = "engineering@theseventeen.co" },
 ]
 keywords = [
     "ai",

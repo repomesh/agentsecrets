@@ -42,9 +42,9 @@ func init() {
 			RunE:  runWorkspaceCreate,
 		},
 		&cobra.Command{
-			Use:   "invite [email]",
-			Short: "Invite a user to the current workspace",
-			Args:  cobra.MaximumNArgs(1),
+			Use:   "invite [email...] ",
+			Short: "Invite one or more users to the current workspace",
+			Args:  cobra.MinimumNArgs(0),
 			RunE:  runWorkspaceInvite,
 		},
 		&cobra.Command{
@@ -222,49 +222,74 @@ func runWorkspaceInvite(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("Cannot invite members to a personal workspace.\nUse 'agentsecrets project invite <email>' to collaborate on a specific project instead.")
 	}
 
-	email := firstArg(args)
+	var emails []string
 	var role string
 
-	// Collect both fields in one form when email isn't pre-supplied.
-	if email == "" {
-		if err := huh.NewForm(
-			huh.NewGroup(
-				huh.NewInput().
-					Title("Invite Member").
-					Description("Enter the email address to invite").
-					Value(&email),
-				huh.NewSelect[string]().
-					Title("Role").
-					Options(
-						huh.NewOption("Member", "member"),
-						huh.NewOption("Admin", "admin"),
-					).
-					Value(&role),
-			),
-		).Run(); err != nil {
-			return nil // user cancelled
-		}
+	if len(args) > 0 {
+		// Emails provided via args
+		emails = args
 	} else {
-		// Email given via arg — only ask for role.
-		if err := huh.NewSelect[string]().
-			Title("Select Role").
-			Options(
-				huh.NewOption("Member", "member"),
-				huh.NewOption("Admin", "admin"),
-			).
-			Value(&role).
+		// Interactive: collect a single email
+		var email string
+		if err := huh.NewInput().
+			Title("Invite Member").
+			Description("Enter the email address to invite").
+			Value(&email).
 			Run(); err != nil {
 			return nil
 		}
+		emails = []string{email}
 	}
 
-	if err := ui.Spinner(fmt.Sprintf("Inviting %s...", email), func() error {
-		return workspaceService.Invite(workspaceID, email, role)
+	// Select role for all invitees
+	if err := huh.NewSelect[string]().
+		Title("Select Role").
+		Options(
+			huh.NewOption("Member", "member"),
+			huh.NewOption("Admin", "admin"),
+		).
+		Value(&role).
+		Run(); err != nil {
+		return nil
+	}
+
+	// Password confirmation — same pattern as allowlist
+	if err := verifyPasswordLocally(); err != nil {
+		return err
+	}
+
+	// Execute batch invite
+	var results []workspaces.InviteResult
+	spinnerMsg := fmt.Sprintf("Inviting %d member(s)...", len(emails))
+	if len(emails) == 1 {
+		spinnerMsg = fmt.Sprintf("Inviting %s...", emails[0])
+	}
+
+	if err := ui.Spinner(spinnerMsg, func() error {
+		var e error
+		results, e = workspaceService.InviteBatch(workspaceID, emails, role)
+		return e
 	}); err != nil {
 		return err
 	}
 
-	ui.Success(fmt.Sprintf("Invited %s to workspace!", email))
+	// Report results
+	hasSuccess := false
+	for _, r := range results {
+		if r.Error != "" {
+			ui.Error(fmt.Sprintf("  ✗ %s — %s", r.Email, r.Error))
+		} else {
+			ui.Success(fmt.Sprintf("  ✓ %s invited", r.Email))
+			hasSuccess = true
+		}
+	}
+
+	if hasSuccess {
+		fmt.Println()
+		ui.Success("Invitation process completed!")
+	} else {
+		fmt.Println()
+	}
 	return nil
 }
 
