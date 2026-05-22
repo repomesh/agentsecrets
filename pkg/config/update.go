@@ -72,7 +72,7 @@ func CheckForUpdates(currentVersion string) (*CheckResult, error) {
 	}
 
 	latest := strings.TrimPrefix(release.TagName, "v")
-	
+
 	// Update cache
 	cfg.LastUpdateCheck = now
 	cfg.LatestVersion = latest
@@ -92,21 +92,21 @@ func CheckForUpdates(currentVersion string) (*CheckResult, error) {
 	return nil, nil
 }
 
-// isNewer is a simple semantic version comparator. 
+// isNewer is a simple semantic version comparator.
 // Assumes standard semver (e.g., 1.1.2)
 func isNewer(latest, current string) bool {
 	if latest == current {
 		return false
 	}
-	
+
 	lParts := strings.Split(latest, ".")
 	cParts := strings.Split(current, ".")
-	
+
 	for i := 0; i < len(lParts) && i < len(cParts); i++ {
 		var l, c int
 		fmt.Sscanf(lParts[i], "%d", &l)
 		fmt.Sscanf(cParts[i], "%d", &c)
-		
+
 		if l > c {
 			return true
 		}
@@ -114,7 +114,7 @@ func isNewer(latest, current string) bool {
 			return false
 		}
 	}
-	
+
 	// If prefixes are same, the one with more parts is "newer" (e.g. 1.1.2.1 > 1.1.2)
 	return len(lParts) > len(cParts)
 }

@@ -57,14 +57,14 @@ func (s *Service) Signup(req SignupRequest) error {
 
 	// Build API request body
 	data := map[string]interface{}{
-		"first_name":           req.FirstName,
-		"last_name":            req.LastName,
-		"email":                req.Email,
-		"password":             req.Password,
-		"public_key":           base64.StdEncoding.EncodeToString(keys.PublicKey),
+		"first_name":            req.FirstName,
+		"last_name":             req.LastName,
+		"email":                 req.Email,
+		"password":              req.Password,
+		"public_key":            base64.StdEncoding.EncodeToString(keys.PublicKey),
 		"encrypted_private_key": keys.EncryptedPrivateKey, // Already base64
-		"key_salt":             keys.Salt,                 // Hex string
-		"terms_agreement":      true,
+		"key_salt":              keys.Salt,                // Hex string
+		"terms_agreement":       true,
 	}
 
 	resp, err := s.API.Call("auth.signup", "POST", data, nil, nil)
@@ -149,7 +149,7 @@ func (s *Service) PerformLogin(email, password string, privateKey, publicKey []b
 	hasher := sha256.New()
 	hasher.Write([]byte(email + ":" + password))
 	passwordHash := hex.EncodeToString(hasher.Sum(nil))
-	
+
 	globalCfg, _ := config.LoadGlobalConfig()
 	if globalCfg == nil {
 		globalCfg = &config.GlobalConfig{}
@@ -250,13 +250,13 @@ type loginResponse struct {
 }
 
 type loginData struct {
-	Access              string              `json:"access"`
-	Refresh             string              `json:"refresh"`
-	ExpiresAt           string              `json:"expires_at"`
-	EncryptedPrivateKey string              `json:"encrypted_private_key"`
-	KeySalt             string              `json:"key_salt"`
-	User                loginUser           `json:"user"`
-	Workspaces          []loginWorkspace    `json:"workspaces"`
+	Access              string           `json:"access"`
+	Refresh             string           `json:"refresh"`
+	ExpiresAt           string           `json:"expires_at"`
+	EncryptedPrivateKey string           `json:"encrypted_private_key"`
+	KeySalt             string           `json:"key_salt"`
+	User                loginUser        `json:"user"`
+	Workspaces          []loginWorkspace `json:"workspaces"`
 }
 
 type loginUser struct {

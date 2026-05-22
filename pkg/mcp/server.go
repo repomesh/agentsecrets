@@ -138,10 +138,10 @@ func handleAPICall(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolR
 
 	// Execute
 	result, err := engine.Execute(proxy.CallRequest{
-		TargetURL:  url,
-		Method:     method,
-		Headers:    headers,
-		Body:       body,
+		TargetURL:     url,
+		Method:        method,
+		Headers:       headers,
+		Body:          body,
 		Injections:    injections,
 		AgentID:       "mcp",
 		IdentityLevel: "issued",

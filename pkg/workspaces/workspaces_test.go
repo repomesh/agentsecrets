@@ -46,10 +46,10 @@ func TestWorkspaceCreate(t *testing.T) {
 	client.BaseURL = server.URL
 	svc := NewService(client)
 
-	// Note: Create expects a public key to exist in the global context/keyring? 
-	// Wait, svc.Create calls keyring.GetPublicKey(email). 
+	// Note: Create expects a public key to exist in the global context/keyring?
+	// Wait, svc.Create calls keyring.GetPublicKey(email).
 	// This will fail in test if we don't mock it or skip the check.
-	
+
 	// Let's see if we can at least reach the API call or if it fails early.
 	err := svc.Create("New Team")
 	if err != nil {
@@ -61,7 +61,7 @@ func TestWorkspaceMembers(t *testing.T) {
 	// Setup
 	tmpDir := t.TempDir()
 	config.HomeDirHook = func() (string, error) { return tmpDir, nil }
-	
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]interface{}{

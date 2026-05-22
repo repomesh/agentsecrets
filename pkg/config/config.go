@@ -24,16 +24,16 @@ import (
 
 // GlobalConfig represents ~/.agentsecrets/config.json
 type GlobalConfig struct {
-	Email                string                      `json:"email,omitempty"`
-	SelectedWorkspaceID  string                      `json:"selected_workspace_id,omitempty"`
-	SelectedProjectID    string                      `json:"selected_project_id,omitempty"`
-	SelectedEnvironment  string                      `json:"selected_environment,omitempty"` // "development", "staging", "production"
-	Workspaces           map[string]WorkspaceCacheEntry `json:"workspaces,omitempty"`
-	PasswordHash         string                      `json:"password_hash,omitempty"` // Added for local password verification
-	DefaultStorageMode   int                         `json:"default_storage_mode"` // 1 = keychain (default), 2 = env_file
-	LastUpdateCheck      int64                       `json:"last_update_check,omitempty"`
-	LatestVersion        string                      `json:"latest_version,omitempty"`
-	LastUpdateAlert      int64                       `json:"last_update_alert,omitempty"`
+	Email               string                         `json:"email,omitempty"`
+	SelectedWorkspaceID string                         `json:"selected_workspace_id,omitempty"`
+	SelectedProjectID   string                         `json:"selected_project_id,omitempty"`
+	SelectedEnvironment string                         `json:"selected_environment,omitempty"` // "development", "staging", "production"
+	Workspaces          map[string]WorkspaceCacheEntry `json:"workspaces,omitempty"`
+	PasswordHash        string                         `json:"password_hash,omitempty"` // Added for local password verification
+	DefaultStorageMode  int                            `json:"default_storage_mode"`    // 1 = keychain (default), 2 = env_file
+	LastUpdateCheck     int64                          `json:"last_update_check,omitempty"`
+	LatestVersion       string                         `json:"latest_version,omitempty"`
+	LastUpdateAlert     int64                          `json:"last_update_alert,omitempty"`
 }
 
 // WorkspaceCacheEntry is a cached workspace with its decrypted key
@@ -163,7 +163,7 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	data, err := os.ReadFile(paths.ConfigFile)
 	if err != nil {
 		return nil, err
@@ -473,7 +473,7 @@ func ClearProjectConfig() error {
 	}
 
 	projectFile := filepath.Join(root, ".agentsecrets", "project.json")
-	
+
 	// Check if it exists first
 	if _, err := os.Stat(projectFile); os.IsNotExist(err) {
 		return nil

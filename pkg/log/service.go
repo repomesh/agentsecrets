@@ -174,7 +174,7 @@ func (s *Service) QueryLocal(f Filter) ([]proxy.AuditEvent, error) {
 		var ev proxy.AuditEvent
 		var secretKeysJSON, authStylesJSON string
 		var environment, agentID, identityLevel, method, targetURL, domain, status, reason, resolutionPath, callerRole, workspaceID, projectID, tokenID sql.NullString
-		
+
 		err := rows.Scan(
 			&ev.ID,
 			&ev.Timestamp,
@@ -201,25 +201,55 @@ func (s *Service) QueryLocal(f Filter) ([]proxy.AuditEvent, error) {
 			return nil, fmt.Errorf("scan error: %w", err)
 		}
 
-		if environment.Valid { ev.Environment = environment.String }
-		if agentID.Valid { ev.AgentID = agentID.String }
-		if identityLevel.Valid { ev.IdentityLevel = identityLevel.String }
-		if method.Valid { ev.Method = method.String }
-		if targetURL.Valid { ev.TargetURL = targetURL.String }
-		if domain.Valid { ev.Domain = domain.String }
-		if status.Valid { ev.Status = status.String }
-		if reason.Valid { ev.Reason = reason.String }
-		if resolutionPath.Valid { ev.ResolutionPath = resolutionPath.String }
-		if callerRole.Valid { ev.CallerRole = callerRole.String }
-		if workspaceID.Valid { ev.WorkspaceID = workspaceID.String }
-		if projectID.Valid { ev.ProjectID = projectID.String }
-		if tokenID.Valid { ev.TokenID = tokenID.String }
+		if environment.Valid {
+			ev.Environment = environment.String
+		}
+		if agentID.Valid {
+			ev.AgentID = agentID.String
+		}
+		if identityLevel.Valid {
+			ev.IdentityLevel = identityLevel.String
+		}
+		if method.Valid {
+			ev.Method = method.String
+		}
+		if targetURL.Valid {
+			ev.TargetURL = targetURL.String
+		}
+		if domain.Valid {
+			ev.Domain = domain.String
+		}
+		if status.Valid {
+			ev.Status = status.String
+		}
+		if reason.Valid {
+			ev.Reason = reason.String
+		}
+		if resolutionPath.Valid {
+			ev.ResolutionPath = resolutionPath.String
+		}
+		if callerRole.Valid {
+			ev.CallerRole = callerRole.String
+		}
+		if workspaceID.Valid {
+			ev.WorkspaceID = workspaceID.String
+		}
+		if projectID.Valid {
+			ev.ProjectID = projectID.String
+		}
+		if tokenID.Valid {
+			ev.TokenID = tokenID.String
+		}
 
 		_ = json.Unmarshal([]byte(secretKeysJSON), &ev.SecretKeys)
-		if ev.SecretKeys == nil { ev.SecretKeys = []string{} }
+		if ev.SecretKeys == nil {
+			ev.SecretKeys = []string{}
+		}
 
 		_ = json.Unmarshal([]byte(authStylesJSON), &ev.AuthStyles)
-		if ev.AuthStyles == nil { ev.AuthStyles = []string{} }
+		if ev.AuthStyles == nil {
+			ev.AuthStyles = []string{}
+		}
 
 		results = append(results, ev)
 	}
@@ -246,7 +276,7 @@ func (s *Service) GetLog(id string) (*proxy.AuditEvent, error) {
 		var ev proxy.AuditEvent
 		var secretKeysJSON, authStylesJSON string
 		var environment, agentID, identityLevel, method, targetURL, domain, status, reason, resolutionPath, callerRole, workspaceID, projectID, tokenID sql.NullString
-		
+
 		err := rows.Scan(
 			&ev.ID,
 			&ev.Timestamp,
@@ -273,19 +303,45 @@ func (s *Service) GetLog(id string) (*proxy.AuditEvent, error) {
 			return nil, err
 		}
 
-		if environment.Valid { ev.Environment = environment.String }
-		if agentID.Valid { ev.AgentID = agentID.String }
-		if identityLevel.Valid { ev.IdentityLevel = identityLevel.String }
-		if method.Valid { ev.Method = method.String }
-		if targetURL.Valid { ev.TargetURL = targetURL.String }
-		if domain.Valid { ev.Domain = domain.String }
-		if status.Valid { ev.Status = status.String }
-		if reason.Valid { ev.Reason = reason.String }
-		if resolutionPath.Valid { ev.ResolutionPath = resolutionPath.String }
-		if callerRole.Valid { ev.CallerRole = callerRole.String }
-		if workspaceID.Valid { ev.WorkspaceID = workspaceID.String }
-		if projectID.Valid { ev.ProjectID = projectID.String }
-		if tokenID.Valid { ev.TokenID = tokenID.String }
+		if environment.Valid {
+			ev.Environment = environment.String
+		}
+		if agentID.Valid {
+			ev.AgentID = agentID.String
+		}
+		if identityLevel.Valid {
+			ev.IdentityLevel = identityLevel.String
+		}
+		if method.Valid {
+			ev.Method = method.String
+		}
+		if targetURL.Valid {
+			ev.TargetURL = targetURL.String
+		}
+		if domain.Valid {
+			ev.Domain = domain.String
+		}
+		if status.Valid {
+			ev.Status = status.String
+		}
+		if reason.Valid {
+			ev.Reason = reason.String
+		}
+		if resolutionPath.Valid {
+			ev.ResolutionPath = resolutionPath.String
+		}
+		if callerRole.Valid {
+			ev.CallerRole = callerRole.String
+		}
+		if workspaceID.Valid {
+			ev.WorkspaceID = workspaceID.String
+		}
+		if projectID.Valid {
+			ev.ProjectID = projectID.String
+		}
+		if tokenID.Valid {
+			ev.TokenID = tokenID.String
+		}
 
 		_ = json.Unmarshal([]byte(secretKeysJSON), &ev.SecretKeys)
 		_ = json.Unmarshal([]byte(authStylesJSON), &ev.AuthStyles)

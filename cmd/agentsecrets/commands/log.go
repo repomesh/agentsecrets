@@ -63,23 +63,29 @@ var logShowCmd = &cobra.Command{
 		fmt.Printf("LOG ENTRY  %s\n", entry.ID)
 		fmt.Println("─────────────────────────────────────────────────────────")
 		fmt.Printf("Timestamp        %s\n\n", entry.Timestamp.Format("2006-01-02 15:04:05.000 MST"))
-		
+
 		ws := entry.WorkspaceID
-		if ws == "" { ws = "(none)" }
+		if ws == "" {
+			ws = "(none)"
+		}
 		pr := entry.ProjectID
-		if pr == "" { pr = "(none)" }
+		if pr == "" {
+			pr = "(none)"
+		}
 
 		fmt.Printf("Workspace        %s\n", ws)
 		fmt.Printf("Project          %s\n\n", pr)
 
 		agent := entry.AgentID
-		if agent == "" { agent = "(none)" }
-		
+		if agent == "" {
+			agent = "(none)"
+		}
+
 		fmt.Printf("Agent            %s\n", agent)
 		fmt.Printf("Token            %s\n", entry.TokenID)
 		fmt.Printf("Environment      %s\n", entry.Environment)
 		fmt.Printf("Identity level   %s\n\n", entry.IdentityLevel)
-		
+
 		fmt.Printf("Credential       %s\n", strings.Join(entry.SecretKeys, ", "))
 		fmt.Printf("Injection        %s\n\n", strings.Join(entry.AuthStyles, ", "))
 
@@ -94,7 +100,9 @@ var logShowCmd = &cobra.Command{
 		fmt.Printf("Status           %s\n", statusText)
 		fmt.Printf("Duration         %dms\n", entry.DurationMs)
 		redactedStr := "no"
-		if entry.Redacted { redactedStr = "yes" }
+		if entry.Redacted {
+			redactedStr = "yes"
+		}
 		fmt.Printf("Redacted         %s\n", redactedStr)
 		fmt.Printf("Resolution       %s\n\n", entry.ResolutionPath)
 		fmt.Printf("Caller role      %s\n", entry.CallerRole)
@@ -109,7 +117,7 @@ var logSummaryCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		since, _ := cmd.Flags().GetString("since")
 		filter := buildFilter(cmd, since)
-		
+
 		logs, err := logService.QueryLocal(filter)
 		if err != nil {
 			return err
@@ -141,11 +149,15 @@ var logSummaryCmd = &cobra.Command{
 				redacted++
 			}
 			level := l.IdentityLevel
-			if level == "" { level = "anonymous" }
+			if level == "" {
+				level = "anonymous"
+			}
 			identities[level]++
 
 			ag := l.AgentID
-			if ag == "" { ag = "(anonymous)" }
+			if ag == "" {
+				ag = "(anonymous)"
+			}
 			agentCounts[ag]++
 			if isFailed {
 				agentFailed[ag]++
@@ -343,7 +355,9 @@ func printTopN(counts map[string]int, failedCounts map[string]int, n int) {
 }
 
 func parseDuration(s string) time.Time {
-	if s == "" { return time.Time{} }
+	if s == "" {
+		return time.Time{}
+	}
 	if strings.HasSuffix(s, "d") {
 		days := 0
 		fmt.Sscanf(s, "%dd", &days)
@@ -378,8 +392,12 @@ func buildFilter(cmd *cobra.Command, sinceStr string) log.Filter {
 	f.Limit, _ = cmd.Flags().GetInt("limit")
 
 	untilStr, _ := cmd.Flags().GetString("until")
-	if sinceStr != "" { f.Since = parseDuration(sinceStr) }
-	if untilStr != "" { f.Until = parseDuration(untilStr) }
+	if sinceStr != "" {
+		f.Since = parseDuration(sinceStr)
+	}
+	if untilStr != "" {
+		f.Until = parseDuration(untilStr)
+	}
 
 	return f
 }
@@ -438,7 +456,7 @@ func runLogList(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 
-		fmt.Print("\033[H\033[2J") 
+		fmt.Print("\033[H\033[2J")
 		ui.Banner("Audit Log")
 		fmt.Printf("Showing page %d (entries %d-%d)\n\n", (offset/logPageSize)+1, offset+1, offset+len(logs))
 
@@ -450,10 +468,14 @@ func runLogList(cmd *cobra.Command, args []string) error {
 			idx := fmt.Sprintf("%d", i+1)
 			t := l.Timestamp.Format("15:04:05")
 			ag := l.AgentID
-			if ag == "" { ag = "(anon)" }
+			if ag == "" {
+				ag = "(anon)"
+			}
 			ident := l.IdentityLevel
-			if ident == "" { ident = "anonymous" }
-			
+			if ident == "" {
+				ident = "anonymous"
+			}
+
 			if ident == "anonymous" {
 				anonymousCount++
 			}
@@ -483,7 +505,7 @@ func runLogList(cmd *cobra.Command, args []string) error {
 
 		fmt.Println("\n" + ui.DimStyle.Render("Navigation: [n]ext, [p]rev, [1-20] for detail, [q]uit"))
 		fmt.Print("Action: ")
-		
+
 		var input string
 		fmt.Scanln(&input)
 		input = strings.ToLower(strings.TrimSpace(input))
@@ -517,7 +539,9 @@ func runLogList(cmd *cobra.Command, args []string) error {
 func displayLogBasic(l proxy.AuditEvent) {
 	t := l.Timestamp.Format("15:04:05")
 	ag := l.AgentID
-	if ag == "" { ag = "(anon)" }
+	if ag == "" {
+		ag = "(anon)"
+	}
 
 	// Extract path from target URL
 	path := ""
@@ -528,7 +552,9 @@ func displayLogBasic(l proxy.AuditEvent) {
 	status := colorStatus(l.StatusCode, l.Status)
 	dur := fmt.Sprintf("%dms", l.DurationMs)
 	env := l.Environment
-	if env == "" { env = "dev" } // fallback for display
+	if env == "" {
+		env = "dev"
+	} // fallback for display
 
 	fmt.Printf("%s  [%s]  %s  →  %s  %s %s  %s  %s\n", t, env, ag, l.Domain, strings.ToUpper(l.Method), path, status, dur)
 }
@@ -538,7 +564,7 @@ func showLogDetail(entry proxy.AuditEvent) {
 	fmt.Printf("LOG ENTRY  %s\n", entry.ID)
 	fmt.Println("─────────────────────────────────────────────────────────")
 	ui.StatusRow("Timestamp", entry.Timestamp.Format("2006-01-02 15:04:05.000 MST"))
-	
+
 	ui.StatusRow("Workspace", entry.WorkspaceID)
 	ui.StatusRow("Project", entry.ProjectID)
 	ui.StatusRow("Environment", entry.Environment)
@@ -546,7 +572,7 @@ func showLogDetail(entry proxy.AuditEvent) {
 	ui.StatusRow("Agent", entry.AgentID)
 	ui.StatusRow("Token", entry.TokenID)
 	ui.StatusRow("Identity Level", entry.IdentityLevel)
-	
+
 	ui.StatusRow("Credentials", strings.Join(entry.SecretKeys, ", "))
 	ui.StatusRow("Injection", strings.Join(entry.AuthStyles, ", "))
 

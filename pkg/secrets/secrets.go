@@ -53,7 +53,7 @@ func (s *Service) BatchSet(kv map[string]string, environment string) error {
 	if env == "" {
 		env = config.ResolveEnvironment()
 	}
-	
+
 	apiSecrets := make(map[string]string)
 	for k, v := range kv {
 		// 1. Encrypt for cloud
@@ -109,12 +109,12 @@ func (s *Service) BatchSetLocal(kv map[string]string, env string) error {
 	for k, v := range kv {
 		_ = keyring.SetSecret(project.ProjectID, env, k, v)
 	}
-	
+
 	// We only write to .env if the environment matches the current active one
 	if env == config.ResolveEnvironment() {
 		_ = s.Env.Write(kv)
 	}
-	
+
 	_ = s.UpdateEnvExampleFromLocal()
 	return nil
 }
@@ -233,7 +233,7 @@ func (s *Service) Pull(targetKeys []string) error {
 	secrets, err := s.List()
 	if err != nil {
 		return err
-	} 
+	}
 
 	wsKey, err := config.GetProjectWorkspaceKey()
 	if err != nil {
@@ -315,7 +315,7 @@ func (s *Service) Push() error {
 			return fmt.Errorf("push secrets: encryption failed for key %s: %w", k, err)
 		}
 		apiSet[k] = encrypted
-		
+
 		// 1. Sync to keychain
 		_ = keyring.SetSecret(project.ProjectID, env, k, v)
 	}
@@ -389,12 +389,11 @@ func (s *Service) Delete(key string) error {
 
 // DiffResult holds the differences between local and cloud secrets.
 type DiffResult struct {
-	Added    []string            // Keys only in .env
-	Removed  []string            // Keys only in Cloud
-	Changed  map[string][2]string // Key -> [LocalVal, CloudVal]
+	Added     []string             // Keys only in .env
+	Removed   []string             // Keys only in Cloud
+	Changed   map[string][2]string // Key -> [LocalVal, CloudVal]
 	Unchanged []string
 }
-
 
 // DiffCached returns the differences using cached cloud secrets where possible.
 func (s *Service) DiffCached(fromEnv, toEnv string) (*DiffResult, error) {
@@ -630,15 +629,21 @@ func (s *Service) UpdateEnvExampleFromLocal() error {
 
 	for key := range allKeys {
 		envs := keyEnvs[key]
-		
+
 		hasDev := false
 		hasStg := false
 		hasPrd := false
-		
+
 		for _, e := range envs {
-			if e == "development" { hasDev = true }
-			if e == "staging" { hasStg = true }
-			if e == "production" { hasPrd = true }
+			if e == "development" {
+				hasDev = true
+			}
+			if e == "staging" {
+				hasStg = true
+			}
+			if e == "production" {
+				hasPrd = true
+			}
 		}
 
 		allThree := hasDev && hasStg && hasPrd
@@ -648,9 +653,15 @@ func (s *Service) UpdateEnvExampleFromLocal() error {
 			annotation = "[all]"
 		} else {
 			var segments []string
-			if hasDev { segments = append(segments, "[development]") }
-			if hasStg { segments = append(segments, "[staging]") }
-			if hasPrd { segments = append(segments, "[production]") }
+			if hasDev {
+				segments = append(segments, "[development]")
+			}
+			if hasStg {
+				segments = append(segments, "[staging]")
+			}
+			if hasPrd {
+				segments = append(segments, "[production]")
+			}
 			annotation = strings.Join(segments, " ")
 		}
 
@@ -660,14 +671,14 @@ func (s *Service) UpdateEnvExampleFromLocal() error {
 	return s.Env.WriteEnvExample(strings.Join(lines, "\n") + "\n")
 }
 
-// UpdateEnvExample fetches secrets across development, staging, and production 
+// UpdateEnvExample fetches secrets across development, staging, and production
 // and regenerates .env.example with correct environment scopes.
 func (s *Service) UpdateEnvExample() error {
 	project, err := config.LoadProjectConfig()
 	if err != nil || project.ProjectID == "" {
 		return nil
 	}
-	
+
 	wsKey, err := config.GetProjectWorkspaceKey()
 	if err != nil {
 		return err
@@ -683,7 +694,7 @@ func (s *Service) UpdateEnvExample() error {
 		}, map[string]string{
 			"environment": env,
 		})
-		
+
 		if err == nil && resp.StatusCode == http.StatusOK {
 			var res struct {
 				Data struct {
@@ -712,7 +723,7 @@ func (s *Service) UpdateEnvExample() error {
 
 	for key := range allKeys {
 		envsMap := keyEnvValues[key]
-		
+
 		valDev, hasDev := envsMap["development"]
 		valStg, hasStg := envsMap["staging"]
 		valPrd, hasPrd := envsMap["production"]
@@ -725,9 +736,15 @@ func (s *Service) UpdateEnvExample() error {
 			annotation = "[all]"
 		} else {
 			var segments []string
-			if hasDev { segments = append(segments, "[development]") }
-			if hasStg { segments = append(segments, "[staging]") }
-			if hasPrd { segments = append(segments, "[production]") }
+			if hasDev {
+				segments = append(segments, "[development]")
+			}
+			if hasStg {
+				segments = append(segments, "[staging]")
+			}
+			if hasPrd {
+				segments = append(segments, "[production]")
+			}
 			annotation = strings.Join(segments, " ")
 		}
 

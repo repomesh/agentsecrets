@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/dustin/go-humanize"
+	"github.com/spf13/cobra"
 
 	"github.com/The-17/agentsecrets/pkg/config"
 	"github.com/The-17/agentsecrets/pkg/ui"
@@ -82,7 +82,7 @@ var statusCmd = &cobra.Command{
 		// Workspace info
 		wsID := config.GetSelectedWorkspaceID()
 		global, _ := config.LoadGlobalConfig()
-		
+
 		wsDisplay := "—"
 		wsDim := true
 		if wsID != "" && global != nil {
@@ -94,14 +94,12 @@ var statusCmd = &cobra.Command{
 				wsDim = false
 			}
 		}
-		
+
 		if wsDim {
 			ui.StatusRowDim("Selected Workspace:", wsDisplay)
 		} else {
 			ui.StatusRow("Selected Workspace:", wsDisplay)
 		}
-
-
 
 		// Environment info
 		env, source := config.ResolveEnvironmentWithSource()
@@ -148,7 +146,7 @@ var statusCmd = &cobra.Command{
 				}
 			}
 			ui.StatusRow("Secrets:", secretsDisplay)
-			
+
 			ui.StatusRow("Activity:", fmt.Sprintf("Last Push: %s | Last Pull: %s", formatTime(p.LastPush), formatTime(p.LastPull)))
 		} else {
 			ui.StatusRowDim("Current Project:", "—")

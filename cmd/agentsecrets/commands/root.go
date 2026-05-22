@@ -4,6 +4,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
+	"errors"
+	"fmt"
 	"github.com/The-17/agentsecrets/pkg/api"
 	"github.com/The-17/agentsecrets/pkg/auth"
 	"github.com/The-17/agentsecrets/pkg/config"
@@ -11,8 +13,6 @@ import (
 	"github.com/The-17/agentsecrets/pkg/telemetry"
 	"github.com/The-17/agentsecrets/pkg/ui"
 	"github.com/The-17/agentsecrets/pkg/workspaces"
-	"errors"
-	"fmt"
 	"os"
 )
 
@@ -43,7 +43,7 @@ var rootCmd = &cobra.Command{
 		"   "+ui.BrandStyle.Render("agentsecrets status")+"      "+ui.LabelStyle.Render("Show current session info"),
 		"",
 	),
-	Version: Version,
+	Version:       Version,
 	SilenceErrors: true,
 	SilenceUsage:  true,
 }
@@ -108,7 +108,7 @@ func init() {
 	rootCmd.AddCommand(loginCmd)
 	rootCmd.AddCommand(logoutCmd)
 	rootCmd.AddCommand(statusCmd)
-	
+
 	// Add auth middleware to commands that require it
 	workspaceCmd.PersistentPreRunE = authService.EnsureAuth
 	projectCmd.PersistentPreRunE = authService.EnsureAuth
@@ -207,4 +207,3 @@ func keychainAuthMiddleware(cmd *cobra.Command, args []string) error {
 
 	return nil
 }
-

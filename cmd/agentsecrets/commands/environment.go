@@ -60,7 +60,6 @@ var envCleanCmd = &cobra.Command{
 	RunE:  runEnvClean,
 }
 
-
 func init() {
 	environmentCmd.AddCommand(envSwitchCmd)
 	environmentCmd.AddCommand(envListCmd)
@@ -157,7 +156,7 @@ func runEnvList(cmd *cobra.Command, args []string) error {
 		go func(e string) {
 			count := 0
 			resp, err := apiClient.Call("secrets.list", "GET", nil, map[string]string{
-				"project_id":  project.ProjectID,
+				"project_id": project.ProjectID,
 			}, map[string]string{
 				"environment": e,
 			})
@@ -186,9 +185,12 @@ func runEnvList(cmd *cobra.Command, args []string) error {
 	ordered := make([]envInfo, 3)
 	for _, env := range environments {
 		switch env.Environment {
-		case "development": ordered[0] = env
-		case "staging":     ordered[1] = env
-		case "production":  ordered[2] = env
+		case "development":
+			ordered[0] = env
+		case "staging":
+			ordered[1] = env
+		case "production":
+			ordered[2] = env
 		}
 	}
 	environments = ordered
@@ -298,7 +300,7 @@ func runEnvCopy(cmd *cobra.Command, args []string) error {
 			plaintext, _ := crypto.DecryptSecret(s.Value, wsKey)
 			kv[s.Key] = plaintext
 		}
-		
+
 		return secretsService.BatchSet(kv, to)
 	}); err != nil {
 		return fmt.Errorf("copy failed: %w", err)
@@ -438,7 +440,7 @@ func maskValue(val string) string {
 
 func runEnvClean(cmd *cobra.Command, args []string) error {
 	activeEnv := config.ResolveEnvironment()
-	
+
 	var list []secrets.SecretMetadata
 	if err := ui.Spinner("Fetching secrets...", func() error {
 		var e error
@@ -471,4 +473,3 @@ func runEnvClean(cmd *cobra.Command, args []string) error {
 	ui.Success(fmt.Sprintf("Cleaned %s environment.", activeEnv))
 	return nil
 }
-

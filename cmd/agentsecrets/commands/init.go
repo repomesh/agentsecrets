@@ -46,7 +46,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Phase 1: Global Setup (Self-Contained)
 	if !config.GlobalConfigExists() {
 		ui.Info("Setting up AgentSecrets...")
-		
+
 		if err := config.InitGlobalConfig(); err != nil {
 			return fmt.Errorf("failed to initialize global config: %w", err)
 		}
@@ -63,7 +63,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 				).
 				Value(&modeChoice).
 				Run()
-			
+
 			if err == nil {
 				if modeChoice == "2" {
 					modeToUse = 2
@@ -110,7 +110,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 				return err
 			}
 		}
-		
+
 		fmt.Println() // Spacer before project setup
 	} else {
 		// Subsequent runs: use global default
@@ -164,13 +164,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Phase 3: Setup keychain-auth daemon (Disabled in v1.3.0)
 	/*
-	if err := ui.Spinner("Configuring secure keychain daemon...", func() error {
-		return keychainauth.AutoSetup()
-	}); err != nil {
-		ui.Warning(fmt.Sprintf("Failed to auto-configure keychain-auth: %v", err))
-		ui.Info("You may need to run 'agentsecrets setup keychain-auth' later, or install manually:")
-		ui.Info("  brew install The-17/tap/keychain-auth")
-	}
+		if err := ui.Spinner("Configuring secure keychain daemon...", func() error {
+			return keychainauth.AutoSetup()
+		}); err != nil {
+			ui.Warning(fmt.Sprintf("Failed to auto-configure keychain-auth: %v", err))
+			ui.Info("You may need to run 'agentsecrets setup keychain-auth' later, or install manually:")
+			ui.Info("  brew install The-17/tap/keychain-auth")
+		}
 	*/
 
 	return nil
@@ -390,4 +390,3 @@ func updateGitignore(projectRoot string) {
 		_ = os.WriteFile(gitignorePath, []byte(newContent), 0644)
 	}
 }
-

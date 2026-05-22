@@ -1,12 +1,9 @@
 package keychainauth
 
 import (
-	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"runtime"
-	"syscall"
 	"time"
 )
 
@@ -26,7 +23,7 @@ func SocketPath() string {
 			runtimeDir = ""
 		}
 	}
-	
+
 	if runtimeDir == "" {
 		// Fallback to home-based cache dir
 		runtimeDir = filepath.Join(os.Getenv("HOME"), ".cache")
@@ -44,43 +41,3 @@ var (
 	timeNow  = time.Now
 	timeZero time.Time
 )
-
-// dialCLOEXEC connects to a Unix domain socket with the SOCK_CLOEXEC flag set.
-// This prevents the file descriptor from being inherited by child processes,
-// which is critical for `agentsecrets env` and `agentsecrets exec` commands
-// that spawn child processes.
-func dialCLOEXEC(sockPath string) (net.Conn, error) {
-	if runtime.GOOS == "windows" {
-		// Windows doesn't use Unix sockets — fall back to standard dial.
-		// Named pipe support can be added later.
-		return net.Dial("unix", sockPath)
-	}
-
-	// Create socket with SOCK_CLOEXEC
-	fd, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
-	if err != nil {
-		// Fallback for older kernels that don't support SOCK_CLOEXEC
-		return net.Dial("unix", sockPath)
-	}
-
-	addr := &syscall.SockaddrUnix{Name: sockPath}
-	if err := syscall.Connect(fd, addr); err != nil {
-		syscall.Close(fd)
-		return nil, err
-	}
-
-	// Convert raw fd to a net.Conn
-	file := os.NewFile(uintptr(fd), sockPath)
-	if file == nil {
-		syscall.Close(fd)
-		return nil, fmt.Errorf("failed to wrap socket fd")
-	}
-
-	c, err := net.FileConn(file)
-	file.Close() // FileConn dups the fd, so close the original
-	if err != nil {
-		return nil, err
-	}
-
-	return c, nil
-}

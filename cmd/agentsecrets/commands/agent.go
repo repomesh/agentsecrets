@@ -247,7 +247,7 @@ var agentTokenRevokeCmd = &cobra.Command{
 					return nil
 				}
 			}
-			
+
 			agent, err := agentService.GetByName(workspaceID, agentName)
 			if err != nil {
 				return err
@@ -267,7 +267,7 @@ var agentTokenRevokeCmd = &cobra.Command{
 		if agentName == "" {
 			return fmt.Errorf("please provide the --agent <name> for the token")
 		}
-		
+
 		if !confirm {
 			fmt.Printf("Revoke token %s for agent %s? [y/N] ", tokenID, agentName)
 			var response string

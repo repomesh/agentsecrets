@@ -293,7 +293,7 @@ func TestAuditNeverLogsSecretValues(t *testing.T) {
 func TestEngineExecuteRedactBody(t *testing.T) {
 	secretValue := "sk_live_ECHO_SECRET_12345"
 	originalResponse := fmt.Sprintf(`{"auth": "Bearer %s", "data": "hello"}`, secretValue)
-	
+
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(200)

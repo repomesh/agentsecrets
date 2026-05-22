@@ -102,7 +102,7 @@ func (s *Service) Create(name, description string) (*Project, error) {
 		return nil, fmt.Errorf("create project: decode: %w", err)
 	}
 
-	// Bind locally 
+	// Bind locally
 	if err := s.bindLocally(&result.Data); err != nil {
 		return nil, fmt.Errorf("create project: bind: %w", err)
 	}
@@ -167,7 +167,7 @@ func (s *Service) bindLocally(project *Project) error {
 	local.ProjectName = project.Name
 	local.Description = project.Description
 	local.WorkspaceID = project.WorkspaceID
-	
+
 	// Get workspace name from global cache if available
 	global, _ := config.LoadGlobalConfig()
 	if global != nil {
@@ -347,7 +347,7 @@ func (s *Service) Invite(email, role string) error {
 		if err != nil {
 			return fmt.Errorf("failed to load old workspace key: %w", err)
 		}
-		
+
 		apiSecrets := []map[string]string{}
 		environments := []string{"development", "staging", "production"}
 
@@ -356,7 +356,7 @@ func (s *Service) Invite(email, role string) error {
 			if err != nil {
 				continue // Skip environments that fail or don't exist
 			}
-			
+
 			var scrtRes struct {
 				Data struct {
 					Secrets []struct {
@@ -365,7 +365,7 @@ func (s *Service) Invite(email, role string) error {
 					} `json:"secrets"`
 				} `json:"data"`
 			}
-			
+
 			if err := json.NewDecoder(scrtResp.Body).Decode(&scrtRes); err != nil {
 				scrtResp.Body.Close()
 				continue
@@ -381,7 +381,7 @@ func (s *Service) Invite(email, role string) error {
 				if err != nil {
 					return fmt.Errorf("failed to re-encrypt secret %q in %s: %w", secret.Key, env, err)
 				}
-				
+
 				apiSecrets = append(apiSecrets, map[string]string{
 					"key":         secret.Key,
 					"value":       newEncrypted,

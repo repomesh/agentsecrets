@@ -58,7 +58,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":        "ok",
 		"project":       s.Engine.ProjectID,
-		"last_sync":      lastSync.Format(time.RFC3339),
+		"last_sync":     lastSync.Format(time.RFC3339),
 		"revoked_count": len(revoked),
 		"revoked_ids":   revoked,
 	})

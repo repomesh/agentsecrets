@@ -103,4 +103,3 @@ func TestCheckForUpdatesAlertInterval(t *testing.T) {
 	}
 	fmt.Println("✓ Update check alert interval tests passed")
 }
-

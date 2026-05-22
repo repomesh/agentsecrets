@@ -105,7 +105,7 @@ func ErrorWithSuggestions(err error, suggestions ...string) {
 	// Dynamically resolve additional helpful suggestions based on common error patterns
 	errStr := strings.ToLower(err.Error())
 	dynamicSuggestions := make([]string, 0, len(suggestions)+3)
-	
+
 	// Add user-provided suggestions first
 	dynamicSuggestions = append(dynamicSuggestions, suggestions...)
 

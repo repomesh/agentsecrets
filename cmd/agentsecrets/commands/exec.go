@@ -134,4 +134,3 @@ func ensureKeychainAuthForExec() error {
 
 	return keychainauth.Init()
 }
-

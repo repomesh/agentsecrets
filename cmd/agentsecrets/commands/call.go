@@ -11,13 +11,13 @@ import (
 )
 
 var (
-	callURL      string
-	callMethod   string
-	callBody     string
-	callBearer   string
-	callBasic    string
-	callHeaders  []string // "X-API-Key=SECRET_NAME"
-	callQueries  []string // "api_key=SECRET_NAME"
+	callURL        string
+	callMethod     string
+	callBody       string
+	callBearer     string
+	callBasic      string
+	callHeaders    []string // "X-API-Key=SECRET_NAME"
+	callQueries    []string // "api_key=SECRET_NAME"
 	callBodyFields []string // "json.path=SECRET_NAME"
 	callFormFields []string // "field=SECRET_NAME"
 )
@@ -50,7 +50,7 @@ var callCmd = &cobra.Command{
 	agentsecrets call --url https://api.example.com/data \
 		--bearer AUTH_TOKEN --header X-Org-ID=ORG_SECRET`,
 	SilenceUsage: true,
-	RunE: runCall,
+	RunE:         runCall,
 }
 
 func init() {

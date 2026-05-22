@@ -2,8 +2,8 @@ package keychainauth
 
 import (
 	"crypto/sha256"
-	"encoding/json"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -143,11 +142,17 @@ func IsFullyConfigured() bool {
 		if rb.Path == selfPath && rb.Hash == selfHash {
 			hasRead := false
 			for _, s := range rb.AllowedReadServices {
-				if s == serviceName { hasRead = true; break }
+				if s == serviceName {
+					hasRead = true
+					break
+				}
 			}
 			hasWrite := false
 			for _, s := range rb.AllowedWriteServices {
-				if s == serviceName { hasWrite = true; break }
+				if s == serviceName {
+					hasWrite = true
+					break
+				}
 			}
 			if hasRead && hasWrite && rb.CanSearch {
 				return true
@@ -182,7 +187,7 @@ func EnsureRegistered(keychainAuthPath string) error {
 	cfgPath := keychainAuthConfigPath()
 	data, err := os.ReadFile(cfgPath)
 	action := "register"
-	
+
 	if err == nil {
 		var cfg kcConfig
 		if err := json.Unmarshal(data, &cfg); err == nil {
@@ -389,9 +394,7 @@ func startDirect(keychainAuthPath string) error {
 	cmd.Stdin = nil
 
 	// Start in a new session so the daemon survives parent CLI exit
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid: true,
-	}
+	setSysProcAttr(cmd)
 
 	// Start as detached process
 	if err := cmd.Start(); err != nil {
@@ -417,7 +420,6 @@ func waitForSocket() error {
 	}
 	return fmt.Errorf("keychain-auth daemon started but socket not available after 3 seconds")
 }
-
 
 // computeHash returns the SHA-256 hash of a file in "sha256:<hex>" format.
 func computeHash(path string) (string, error) {

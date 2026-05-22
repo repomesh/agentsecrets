@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
-	_ "github.com/glebarez/go-sqlite"
 	"github.com/The-17/agentsecrets/pkg/api"
+	_ "github.com/glebarez/go-sqlite"
+	"github.com/google/uuid"
 )
 
 // AuditEvent records a single proxied API call.
@@ -21,21 +21,21 @@ import (
 type AuditEvent struct {
 	ID             string    `json:"id"`
 	Timestamp      time.Time `json:"timestamp"`
-	Environment    string    `json:"environment,omitempty"`  // "development", "staging", "production"
-	SecretKeys     []string  `json:"secret_keys"`            // KEY NAMES e.g. ["STRIPE_SECRET_KEY"]
-	AgentID        string    `json:"agent_id,omitempty"`     // from agent identification
-	IdentityLevel  string    `json:"identity_level"`         // "anonymous", "declared", "issued"
+	Environment    string    `json:"environment,omitempty"` // "development", "staging", "production"
+	SecretKeys     []string  `json:"secret_keys"`           // KEY NAMES e.g. ["STRIPE_SECRET_KEY"]
+	AgentID        string    `json:"agent_id,omitempty"`    // from agent identification
+	IdentityLevel  string    `json:"identity_level"`        // "anonymous", "declared", "issued"
 	Method         string    `json:"method"`
 	TargetURL      string    `json:"target_url"`
-	Domain         string    `json:"domain,omitempty"`       // Target domain (e.g. "api.stripe.com")
-	AuthStyles     []string  `json:"auth_styles"`            // e.g. ["bearer"]
+	Domain         string    `json:"domain,omitempty"` // Target domain (e.g. "api.stripe.com")
+	AuthStyles     []string  `json:"auth_styles"`      // e.g. ["bearer"]
 	StatusCode     int       `json:"status_code"`
 	DurationMs     int64     `json:"duration_ms"`
-	Status         string    `json:"status"`                 // "OK" or "BLOCKED"
-	Reason         string    `json:"reason,omitempty"`       // "domain_not_in_allowlist" or "-"
+	Status         string    `json:"status"`           // "OK" or "BLOCKED"
+	Reason         string    `json:"reason,omitempty"` // "domain_not_in_allowlist" or "-"
 	Redacted       bool      `json:"redacted"`
-	ResolutionPath string    `json:"resolution_path"`        // e.g. "local proxy", "cloud"
-	CallerRole     string    `json:"caller_role,omitempty"`  // e.g. "member"
+	ResolutionPath string    `json:"resolution_path"`       // e.g. "local proxy", "cloud"
+	CallerRole     string    `json:"caller_role,omitempty"` // e.g. "member"
 	WorkspaceID    string    `json:"workspace_id,omitempty"`
 	ProjectID      string    `json:"project_id,omitempty"`
 	TokenID        string    `json:"token_id,omitempty"`

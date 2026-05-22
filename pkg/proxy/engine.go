@@ -91,9 +91,9 @@ func NewEngine(projectID string) (*Engine, error) {
 	}
 
 	return &Engine{
-		ProjectID:     projectID,
-		WorkspaceID:   pc.WorkspaceID,
-		Audit:         audit,
+		ProjectID:   projectID,
+		WorkspaceID: pc.WorkspaceID,
+		Audit:       audit,
 		Client: &http.Client{
 			Timeout: DefaultTimeout,
 		},
@@ -167,7 +167,7 @@ func (e *Engine) Execute(req CallRequest) (*CallResult, error) {
 				ProjectID:      e.ProjectID,
 			})
 		}
-		
+
 		bodyJSONBytes, _ := json.Marshal(map[string]string{"error": reason, "domain": targetDomain, "message": msg})
 		headers := make(map[string][]string)
 		headers["Content-Type"] = []string{"application/json"}
@@ -247,7 +247,7 @@ func (e *Engine) Execute(req CallRequest) (*CallResult, error) {
 		if len(result.Headers["Content-Type"]) > 0 {
 			contentType = result.Headers["Content-Type"][0]
 		}
-		
+
 		if contentType != "" && !strings.Contains(contentType, "application/json") && !strings.Contains(contentType, "text/") {
 			fmt.Fprintf(os.Stderr, "Warning: redacting unexpected content type: %s\n", contentType)
 		}

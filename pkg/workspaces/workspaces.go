@@ -170,8 +170,8 @@ func (s *Service) InviteBatch(workspaceID string, emails []string, role string) 
 
 	// Collect results and encrypt workspace key for each
 	type inviteEntry struct {
-		Email                string `json:"email"`
-		Role                 string `json:"role"`
+		Email                 string `json:"email"`
+		Role                  string `json:"role"`
 		EncryptedWorkspaceKey string `json:"encrypted_workspace_key"`
 	}
 

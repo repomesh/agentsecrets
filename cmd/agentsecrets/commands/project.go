@@ -96,7 +96,7 @@ func runProjectList(cmd *cobra.Command, args []string) error {
 
 	// Fetch global config to map workspace IDs to names
 	cfg, _ := config.LoadGlobalConfig()
-	
+
 	headers := []string{"Project", "Workspace", "Description"}
 	rows := make([][]string, len(projs))
 

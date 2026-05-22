@@ -21,7 +21,7 @@ func TestProjectService(t *testing.T) {
 	// 1. Mock API
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		
+
 		switch {
 		case r.Method == "GET" && r.URL.Path == "/projects/":
 			json.NewEncoder(w).Encode(map[string]interface{}{

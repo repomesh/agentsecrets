@@ -406,7 +406,7 @@ func runProxyLogs(cmd *cobra.Command, args []string) error {
 		if len(targetURL) > 30 {
 			targetURL = targetURL[:27] + "..."
 		}
-		
+
 		statusStr := e.Status
 		if statusStr == "BLOCKED" {
 			statusStr = ui.ErrorStyle.Render("x BLOCK")

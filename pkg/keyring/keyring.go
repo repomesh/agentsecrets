@@ -293,7 +293,7 @@ func DeleteSecret(projectID, environment, key string) error {
 }
 
 // --- Key Index Management ---
-// We maintain a comma-separated list of keys per project so we can iterate them 
+// We maintain a comma-separated list of keys per project so we can iterate them
 // since go-keyring lacks a list/iterate feature.
 
 func workspaceAllowlistKeyName(workspaceID string) string {
@@ -307,7 +307,7 @@ func SetWorkspaceAllowlist(workspaceID string, domains []string) error {
 	}
 
 	name := workspaceAllowlistKeyName(workspaceID)
-	
+
 	valBytes, err := json.Marshal(domains)
 	if err != nil {
 		return fmt.Errorf("serialize allowlist: %w", err)
@@ -318,7 +318,7 @@ func SetWorkspaceAllowlist(workspaceID string, domains []string) error {
 		encoded := base64.StdEncoding.EncodeToString([]byte(val))
 		return fileSet(name, encoded, "")
 	}
-	
+
 	if err := gokeyring.Set(serviceName, name, val); err != nil {
 		return fmt.Errorf("set allowlist %s: %w", name, err)
 	}
@@ -380,7 +380,7 @@ func ListProjectKeyNames(projectID, environment string) ([]string, error) {
 func getProjectKeys(projectID, environment string) []string {
 	name := projectIndexName(projectID, environment)
 	legacyName := fmt.Sprintf("ProjectKeys_%s", projectID)
-	
+
 	var keys []string
 	keyMap := make(map[string]bool)
 
@@ -462,4 +462,3 @@ func GetAllProjectSecrets(projectID, environment string) (map[string]string, err
 	}
 	return res, nil
 }
-

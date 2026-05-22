@@ -11,24 +11,24 @@ import (
 
 // Agent represents a registered agent identity.
 type Agent struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	WorkspaceID string    `json:"workspace_id"`
-	ProjectID   *string   `json:"project_id,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	TokenCount  int       `json:"token_count"`
-	LastUsed    *time.Time`json:"last_used"`
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	WorkspaceID string     `json:"workspace_id"`
+	ProjectID   *string    `json:"project_id,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	TokenCount  int        `json:"token_count"`
+	LastUsed    *time.Time `json:"last_used"`
 }
 
 // Token represents a token issued to an agent.
 type Token struct {
-	ID        string    `json:"id"`
-	AgentID   string    `json:"agent_id"`
-	Label     string    `json:"label"`
-	CreatedAt time.Time `json:"created_at"`
-	ExpiresAt *time.Time`json:"expires_at,omitempty"`
-	LastUsed  *time.Time`json:"last_used,omitempty"`
-	Status    string    `json:"status"` // e.g., "active", "revoked", "expired"
+	ID        string     `json:"id"`
+	AgentID   string     `json:"agent_id"`
+	Label     string     `json:"label"`
+	CreatedAt time.Time  `json:"created_at"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	LastUsed  *time.Time `json:"last_used,omitempty"`
+	Status    string     `json:"status"` // e.g., "active", "revoked", "expired"
 }
 
 // RegisterRequest holds data to register a new agent.
@@ -43,9 +43,9 @@ type RegisterRequest struct {
 
 // RegisterResponse is returned when registering a new agent (contains the cleartext token).
 type RegisterResponse struct {
-	Agent Agent  `json:"agent"`
-	Token string `json:"token"`           // The cleartext token (only shown once)
-	Label string `json:"label,omitempty"`
+	Agent     Agent      `json:"agent"`
+	Token     string     `json:"token"` // The cleartext token (only shown once)
+	Label     string     `json:"label,omitempty"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
@@ -58,9 +58,9 @@ type IssueTokenRequest struct {
 
 // IssueTokenResponse is returned when issuing a new token.
 type IssueTokenResponse struct {
-	TokenID   string `json:"token_id"`
-	Token     string `json:"token"`           // The cleartext token
-	Label     string `json:"label,omitempty"`
+	TokenID   string     `json:"token_id"`
+	Token     string     `json:"token"` // The cleartext token
+	Label     string     `json:"label,omitempty"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
@@ -68,7 +68,6 @@ type IssueTokenResponse struct {
 type Service struct {
 	client *api.Client
 }
-
 
 func NewService(client *api.Client) *Service {
 	return &Service{client: client}

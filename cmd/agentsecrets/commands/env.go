@@ -11,12 +11,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/The-17/agentsecrets/pkg/ui"
 	"github.com/The-17/agentsecrets/pkg/config"
 	"github.com/The-17/agentsecrets/pkg/keychainauth"
 	"github.com/The-17/agentsecrets/pkg/keyring"
 	"github.com/The-17/agentsecrets/pkg/proxy"
 	"github.com/The-17/agentsecrets/pkg/telemetry"
+	"github.com/The-17/agentsecrets/pkg/ui"
 )
 
 func NewEnvCmd() *cobra.Command {
@@ -185,4 +185,3 @@ func ensureKeychainAuthForEnv() error {
 	}
 	return nil
 }
-

@@ -218,7 +218,7 @@ func runSecretsList(cmd *cobra.Command, args []string) error {
 	for i, k := range sortedKeys {
 		p := presence[k]
 		row := []string{ui.BrandStyle.Render(k)}
-		
+
 		for j := 0; j < 3; j++ {
 			if p[j] {
 				row = append(row, ui.SuccessStyle.Render("*"))
@@ -277,9 +277,12 @@ func runSecretsListRemote(cmd *cobra.Command, args []string) error {
 	for res := range results {
 		idx := 0
 		switch res.env {
-		case "development": idx = 0
-		case "staging":     idx = 1
-		case "production":  idx = 2
+		case "development":
+			idx = 0
+		case "staging":
+			idx = 1
+		case "production":
+			idx = 2
 		}
 		for _, k := range res.keys {
 			p := presence[k]
@@ -308,7 +311,7 @@ func runSecretsListRemote(cmd *cobra.Command, args []string) error {
 	for i, k := range sortedKeys {
 		p := presence[k]
 		row := []string{ui.BrandStyle.Render(k)}
-		
+
 		for j := 0; j < 3; j++ {
 			if p[j] {
 				row = append(row, ui.SuccessStyle.Render("*"))
@@ -344,7 +347,7 @@ func runSecretsPull(cmd *cobra.Command, args []string) error {
 	if hasConflicts && !pullForce {
 		fmt.Println()
 		ui.Warning("Local changes detected that will be overwritten by the cloud version:")
-		
+
 		headers := []string{"Key", "Status"}
 		rows := [][]string{}
 		for k := range diff.Changed {
@@ -402,7 +405,7 @@ func runSecretsPull(cmd *cobra.Command, args []string) error {
 		if err := secretsService.Pull(targetKeys); err != nil {
 			return err
 		}
-		
+
 		pc, err := config.LoadProjectConfig()
 		if err == nil && pc.WorkspaceID != "" {
 			domainsResp, err := workspaceService.ListAllowlist(pc.WorkspaceID)
@@ -615,7 +618,7 @@ func runSecretsDiff(cmd *cobra.Command, args []string) error {
 
 	if len(diff.Added) > 0 || len(diff.Removed) > 0 || len(diff.Changed) > 0 || len(diff.Unchanged) > 0 {
 		fmt.Printf("SECRETS:\n")
-		
+
 		fmt.Printf("\n  %s %s but missing in %s:\n", ui.LabelStyle.Render("In"), ui.BrandStyle.Render(sourceName), ui.BrandStyle.Render(targetName))
 		if len(diff.Added) > 0 {
 			for _, k := range diff.Added {
@@ -672,7 +675,6 @@ func runSecretsDiff(cmd *cobra.Command, args []string) error {
 
 	return nil
 }
-
 
 // upperFirst capitalises the first letter of a string.
 func upperFirst(s string) string {

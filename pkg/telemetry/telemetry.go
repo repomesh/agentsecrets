@@ -14,12 +14,12 @@ import (
 )
 
 type Day struct {
-	CommandExecutions    map[string]int `json:"command_executions"`
-	ProxyCalls           int            `json:"proxy_calls"`
-	ProxyBlocked         int            `json:"proxy_blocked"`
-	ProxyRedacted        int            `json:"proxy_redacted"`
-	InjectionStylesUsed  []string       `json:"injection_styles_used"`
-	IntegrationsActive   []string       `json:"integrations_active"`
+	CommandExecutions   map[string]int `json:"command_executions"`
+	ProxyCalls          int            `json:"proxy_calls"`
+	ProxyBlocked        int            `json:"proxy_blocked"`
+	ProxyRedacted       int            `json:"proxy_redacted"`
+	InjectionStylesUsed []string       `json:"injection_styles_used"`
+	IntegrationsActive  []string       `json:"integrations_active"`
 
 	// Snapshot metadata for the day
 	CliVersion           string `json:"cli_version"`
@@ -234,7 +234,7 @@ func SyncIfDue(client *api.Client, cliVersion string) {
 		d := currentDay()
 		d.CliVersion = cliVersion
 		d.ActiveEnvironment = config.ResolveEnvironment()
-		
+
 		wsType := "personal"
 		wsMemberCount := 1
 		if gc, err := config.LoadGlobalConfig(); err == nil && gc != nil {
@@ -255,7 +255,7 @@ func SyncIfDue(client *api.Client, cliVersion string) {
 		var snapshots []map[string]interface{}
 		var syncedDates []string
 		currentDate := today()
-		
+
 		for date, dayData := range data.Daily {
 			if date == currentDate {
 				// Don't send incomplete telemetry for the current day
