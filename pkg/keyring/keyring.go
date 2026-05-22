@@ -21,6 +21,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/The-17/agentsecrets/pkg/keychainauth"
 	gokeyring "github.com/zalando/go-keyring"
 )
 
@@ -205,6 +206,10 @@ func secretKeyName(projectID, environment, key string) string {
 
 // SetSecret stores a decrypted secret in the keyring and updates the project environment's key index.
 func SetSecret(projectID, environment, key, value string) error {
+	if keychainauth.IsInitialized() {
+		return keychainauth.SetSecret(projectID, environment, key, value)
+	}
+
 	name := secretKeyName(projectID, environment, key)
 	if useFileBackend {
 		// Base64-encode before storing so fileGetKey's decode round-trips correctly.
@@ -223,6 +228,10 @@ func SetSecret(projectID, environment, key, value string) error {
 // GetSecret retrieves a secret value directly from the OS keychain.
 // It handles legacy key format fallback for the development environment.
 func GetSecret(projectID, environment, key string) (string, error) {
+	if keychainauth.IsInitialized() {
+		return keychainauth.GetSecret(projectID, environment, key)
+	}
+
 	if environment == "" {
 		environment = "development"
 	}
@@ -260,6 +269,10 @@ func GetSecret(projectID, environment, key string) (string, error) {
 
 // DeleteSecret removes a secret from the keyring and its index.
 func DeleteSecret(projectID, environment, key string) error {
+	if keychainauth.IsInitialized() {
+		return keychainauth.DeleteSecret(projectID, environment, key)
+	}
+
 	name := secretKeyName(projectID, environment, key)
 	legacyName := fmt.Sprintf("Secret_%s_%s", projectID, key)
 
@@ -289,6 +302,10 @@ func workspaceAllowlistKeyName(workspaceID string) string {
 
 // SetWorkspaceAllowlist stores the allowlist for a workspace in the OS keychain.
 func SetWorkspaceAllowlist(workspaceID string, domains []string) error {
+	if keychainauth.IsInitialized() {
+		return keychainauth.SetWorkspaceAllowlist(workspaceID, domains)
+	}
+
 	name := workspaceAllowlistKeyName(workspaceID)
 	
 	valBytes, err := json.Marshal(domains)
@@ -310,6 +327,10 @@ func SetWorkspaceAllowlist(workspaceID string, domains []string) error {
 
 // GetWorkspaceAllowlist retrieves the allowlist for a workspace from the OS keychain.
 func GetWorkspaceAllowlist(workspaceID string) ([]string, error) {
+	if keychainauth.IsInitialized() {
+		return keychainauth.GetWorkspaceAllowlist(workspaceID)
+	}
+
 	name := workspaceAllowlistKeyName(workspaceID)
 	var val string
 
@@ -349,8 +370,11 @@ func projectIndexName(projectID, environment string) string {
 // for a given project and environment. This reads the key index only
 // (no secret values are accessed, no keychain-auth session required).
 // Useful for listing, .env.example generation, and count display without API calls.
-func ListProjectKeyNames(projectID, environment string) []string {
-	return getProjectKeys(projectID, environment)
+func ListProjectKeyNames(projectID, environment string) ([]string, error) {
+	if keychainauth.IsInitialized() {
+		return keychainauth.ListProjectKeyNames(projectID, environment)
+	}
+	return getProjectKeys(projectID, environment), nil
 }
 
 func getProjectKeys(projectID, environment string) []string {
@@ -424,6 +448,10 @@ func removeKeyFromIndex(projectID, environment, key string) error {
 
 // GetAllProjectSecrets returns all secrets mapped for a specific project and environment from the keyring.
 func GetAllProjectSecrets(projectID, environment string) (map[string]string, error) {
+	if keychainauth.IsInitialized() {
+		return keychainauth.GetAllProjectSecrets(projectID, environment)
+	}
+
 	keys := getProjectKeys(projectID, environment)
 	res := make(map[string]string)
 

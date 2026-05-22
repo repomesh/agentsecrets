@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -86,6 +88,9 @@ func (s *Service) BatchSet(kv map[string]string, environment string) error {
 	if err := s.Env.Write(kv); err != nil {
 		return fmt.Errorf("batch set: failed to update .env: %w", err)
 	}
+
+	// Update local cache
+	s.updateCacheAfterSet(project.ProjectID, env, kv)
 
 	// Update .env.example
 	_ = s.UpdateEnvExampleFromLocal()
@@ -209,6 +214,9 @@ func (s *Service) ListForEnv(env string) ([]SecretMetadata, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
 		return nil, fmt.Errorf("list secrets: failed to parse response: %w", err)
 	}
+
+	// Cache the cloud secrets
+	_ = s.writeCache(project.ProjectID, env, res.Data.Secrets)
 
 	return res.Data.Secrets, nil
 }
@@ -334,6 +342,10 @@ func (s *Service) Push() error {
 	_ = config.SaveProjectConfig(project)
 
 	_ = s.UpdateEnvExampleFromLocal()
+
+	// Refresh cloud secrets cache
+	_, _ = s.ListForEnv(env)
+
 	return nil
 }
 
@@ -368,6 +380,9 @@ func (s *Service) Delete(key string) error {
 	// 3. Delete from Keychain
 	_ = keyring.DeleteSecret(project.ProjectID, env, key)
 
+	// Update local cache
+	s.updateCacheAfterDelete(project.ProjectID, env, key)
+
 	_ = s.UpdateEnvExampleFromLocal()
 	return nil
 }
@@ -381,10 +396,17 @@ type DiffResult struct {
 }
 
 
-// Diff returns the differences between a source and a target.
-// If fromEnv is "", source is local (.env or keychain).
-// If toEnv is "", target is cloud active environment.
+// DiffCached returns the differences using cached cloud secrets where possible.
+func (s *Service) DiffCached(fromEnv, toEnv string) (*DiffResult, error) {
+	return s.diffInternal(fromEnv, toEnv, true)
+}
+
+// Diff returns the differences between a source and a target, querying the cloud.
 func (s *Service) Diff(fromEnv, toEnv string) (*DiffResult, error) {
+	return s.diffInternal(fromEnv, toEnv, false)
+}
+
+func (s *Service) diffInternal(fromEnv, toEnv string, useCache bool) (*DiffResult, error) {
 	var source map[string]string
 	var target map[string]string
 	var err error
@@ -397,9 +419,19 @@ func (s *Service) Diff(fromEnv, toEnv string) (*DiffResult, error) {
 	// 1. Resolve Source
 	if fromEnv != "" {
 		// Source is Cloud(fromEnv)
-		list, err := s.ListForEnv(fromEnv)
-		if err != nil {
-			return nil, err
+		var list []SecretMetadata
+		var cacheErr error
+		if useCache {
+			project, err := config.LoadProjectConfig()
+			if err == nil && project.ProjectID != "" {
+				list, cacheErr = s.readCache(project.ProjectID, fromEnv)
+			}
+		}
+		if list == nil || cacheErr != nil {
+			list, err = s.ListForEnv(fromEnv)
+			if err != nil {
+				return nil, err
+			}
 		}
 		source = make(map[string]string)
 		for _, m := range list {
@@ -426,10 +458,22 @@ func (s *Service) Diff(fromEnv, toEnv string) (*DiffResult, error) {
 	if targetEnv == "" {
 		targetEnv = config.ResolveEnvironment()
 	}
-	list, err := s.ListForEnv(targetEnv)
-	if err != nil {
-		return nil, err
+
+	var list []SecretMetadata
+	var cacheErr error
+	if useCache {
+		project, err := config.LoadProjectConfig()
+		if err == nil && project.ProjectID != "" {
+			list, cacheErr = s.readCache(project.ProjectID, targetEnv)
+		}
 	}
+	if list == nil || cacheErr != nil {
+		list, err = s.ListForEnv(targetEnv)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	target = make(map[string]string)
 	for _, m := range list {
 		if p, err := crypto.DecryptSecret(m.Value, wsKey); err == nil {
@@ -463,6 +507,99 @@ func (s *Service) Diff(fromEnv, toEnv string) (*DiffResult, error) {
 	return res, nil
 }
 
+func (s *Service) getCachePath(projectID, env string) (string, error) {
+	paths, err := config.GetPaths()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(paths.GlobalDir, fmt.Sprintf("cloud_cache_%s_%s.json", projectID, env)), nil
+}
+
+func (s *Service) readCache(projectID, env string) ([]SecretMetadata, error) {
+	path, err := s.getCachePath(projectID, env)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var secrets []SecretMetadata
+	if err := json.Unmarshal(data, &secrets); err != nil {
+		return nil, err
+	}
+	if secrets == nil {
+		return []SecretMetadata{}, nil
+	}
+	return secrets, nil
+}
+
+func (s *Service) writeCache(projectID, env string, secrets []SecretMetadata) error {
+	path, err := s.getCachePath(projectID, env)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	data, err := json.Marshal(secrets)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0600)
+}
+
+func (s *Service) updateCacheAfterSet(projectID, env string, kv map[string]string) {
+	secrets, err := s.readCache(projectID, env)
+	if err != nil {
+		return
+	}
+
+	cacheMap := make(map[string]SecretMetadata)
+	for _, sm := range secrets {
+		cacheMap[sm.Key] = sm
+	}
+
+	workspaceKey, err := config.GetProjectWorkspaceKey()
+	if err != nil {
+		return
+	}
+
+	nowStr := time.Now().Format(time.RFC3339)
+	for k, v := range kv {
+		encrypted, err := crypto.EncryptSecret(v, workspaceKey)
+		if err != nil {
+			continue
+		}
+		cacheMap[k] = SecretMetadata{
+			Key:       k,
+			Value:     encrypted,
+			UpdatedAt: nowStr,
+		}
+	}
+
+	var updated []SecretMetadata
+	for _, sm := range cacheMap {
+		updated = append(updated, sm)
+	}
+	_ = s.writeCache(projectID, env, updated)
+}
+
+func (s *Service) updateCacheAfterDelete(projectID, env, key string) {
+	secrets, err := s.readCache(projectID, env)
+	if err != nil {
+		return
+	}
+
+	var updated []SecretMetadata
+	for _, sm := range secrets {
+		if sm.Key != key {
+			updated = append(updated, sm)
+		}
+	}
+	_ = s.writeCache(projectID, env, updated)
+}
+
 // UpdateEnvExampleFromLocal generates .env.example using locally cached key names.
 // It reads from the keyring index, requiring zero API calls.
 func (s *Service) UpdateEnvExampleFromLocal() error {
@@ -476,7 +613,10 @@ func (s *Service) UpdateEnvExampleFromLocal() error {
 	keyEnvs := make(map[string][]string)
 
 	for _, env := range environments {
-		keys := keyring.ListProjectKeyNames(project.ProjectID, env)
+		keys, err := keyring.ListProjectKeyNames(project.ProjectID, env)
+		if err != nil {
+			return err
+		}
 		for _, key := range keys {
 			allKeys[key] = true
 			keyEnvs[key] = append(keyEnvs[key], env)

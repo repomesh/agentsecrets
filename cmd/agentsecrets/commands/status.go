@@ -133,7 +133,7 @@ var statusCmd = &cobra.Command{
 			// Sync info
 			secretsDisplay := "Unable to calculate"
 			if secretsService != nil {
-				diff, diffErr := secretsService.Diff("", "")
+				diff, diffErr := secretsService.DiffCached("", "")
 				if diffErr != nil {
 					secretsDisplay = fmt.Sprintf("Could not check (%s)", diffErr.Error())
 				} else {

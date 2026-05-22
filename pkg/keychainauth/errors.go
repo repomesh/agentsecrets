@@ -2,34 +2,23 @@ package keychainauth
 
 import "fmt"
 
-// SessionRejectedError is returned when keychain-auth rejects a SESSION_INIT request.
-// The Reason field matches the protocol's RejectReason constants.
-type SessionRejectedError struct {
-	Reason rejectReason
+// DaemonDeniedError is returned when keychain-auth denies a connection or request.
+type DaemonDeniedError struct {
+	Reason reasonCode
 }
 
-func (e *SessionRejectedError) Error() string {
-	return fmt.Sprintf("keychain-auth rejected session: %s", e.Reason)
+func (e *DaemonDeniedError) Error() string {
+	return fmt.Sprintf("keychain-auth denied request: %s", e.Reason)
 }
 
-// IsHashMismatch returns true if the rejection was due to a binary hash mismatch.
-func (e *SessionRejectedError) IsHashMismatch() bool {
+// IsUnregistered returns true if the denial was due to an unregistered binary.
+func (e *DaemonDeniedError) IsUnregistered() bool {
+	return e.Reason == reasonUnregisteredBinary
+}
+
+// IsHashMismatch returns true if the denial was due to a binary hash mismatch during fork.
+func (e *DaemonDeniedError) IsHashMismatch() bool {
 	return e.Reason == reasonHashMismatch
-}
-
-// IsPathMismatch returns true if the rejection was due to a binary path mismatch (e.g. Homebrew upgrade).
-func (e *SessionRejectedError) IsPathMismatch() bool {
-	return e.Reason == reasonPathMismatch
-}
-
-// SecretDeniedError is returned when keychain-auth denies a SECRET_REQUEST.
-type SecretDeniedError struct {
-	Key    string
-	Reason rejectReason
-}
-
-func (e *SecretDeniedError) Error() string {
-	return fmt.Sprintf("keychain-auth denied access to %q: %s", e.Key, e.Reason)
 }
 
 // DaemonNotRunningError is returned when the keychain-auth socket does not exist
@@ -47,15 +36,12 @@ func (e *DaemonNotRunningError) Unwrap() error {
 	return e.Cause
 }
 
-// UserMessage returns the full user-facing error text for a rejection reason.
-// These messages are specified in the integration spec and should not be changed
-// without updating the spec.
+// UserMessage returns the full user-facing error text for keychain-auth errors.
+// These messages should explain what happened and what to do next.
 func UserMessage(err error) string {
 	switch e := err.(type) {
-	case *SessionRejectedError:
-		return sessionRejectMessage(e.Reason)
-	case *SecretDeniedError:
-		return secretDenyMessage(e.Key, e.Reason)
+	case *DaemonDeniedError:
+		return deniedMessage(e.Reason)
 	case *DaemonNotRunningError:
 		return daemonNotRunningMessage(e.SocketPath)
 	default:
@@ -63,35 +49,32 @@ func UserMessage(err error) string {
 	}
 }
 
-func sessionRejectMessage(reason rejectReason) string {
+func deniedMessage(reason reasonCode) string {
 	switch reason {
+	case reasonUnregisteredBinary:
+		return "This AgentSecrets binary is not yet registered with keychain-auth.\n" +
+			"This usually resolves automatically. If it persists, run:\n" +
+			"  agentsecrets init"
 	case reasonHashMismatch:
-		return "Security check failed: AgentSecrets binary has been modified. Reinstall to continue."
-	case reasonInvalidPID:
-		return "keychain-auth could not verify this process. Try again or reinstall AgentSecrets."
-	case reasonPathMismatch:
-		return "keychain-auth does not recognize this binary location. Run 'agentsecrets init' to re-register, or reinstall AgentSecrets."
-	case reasonUnsupportedProtocol:
-		return "keychain-auth version is incompatible. Run: keychain-auth upgrade"
+		return "Security check failed: the AgentSecrets binary has changed since it was registered.\n" +
+			"This usually resolves automatically after an upgrade. If it persists, run:\n" +
+			"  agentsecrets init"
+	case reasonActionNotInPolicy:
+		return "keychain-auth policy does not allow this operation for AgentSecrets.\n" +
+			"Check your keychain-auth configuration."
+	case reasonServiceNotAllowed:
+		return "keychain-auth policy does not allow AgentSecrets to access this service namespace.\n" +
+			"Check your keychain-auth configuration."
+	case reasonTargetNotAllowed:
+		return "keychain-auth policy does not allow access to this secret.\n" +
+			"Check your keychain-auth configuration."
+	case reasonMalformedRequest:
+		return "keychain-auth received a malformed request. This is a bug — please report it."
+	case reasonInternalError:
+		return "keychain-auth encountered an internal error. Try restarting the daemon:\n" +
+			"  keychain-auth start"
 	default:
-		return fmt.Sprintf("keychain-auth rejected the session: %s", reason)
-	}
-}
-
-func secretDenyMessage(key string, reason rejectReason) string {
-	switch reason {
-	case reasonSecretNotFound:
-		return fmt.Sprintf("Secret %q not found in keychain — run 'agentsecrets secrets pull' to sync from cloud", key)
-	case reasonSessionExpired:
-		return "Session expired — the AgentSecrets process may have been replaced. Restart and try again."
-	case reasonSessionInvalidated:
-		return "Session invalidated — the AgentSecrets binary was modified while running. Restart and try again."
-	case reasonUnknownSession:
-		return "No active keychain-auth session. This is a bug — please report it."
-	case reasonInvalidKey:
-		return fmt.Sprintf("Invalid key name %q — key names must not contain slashes, colons, or dots", key)
-	default:
-		return fmt.Sprintf("keychain-auth denied access to %q: %s", key, reason)
+		return fmt.Sprintf("keychain-auth denied the request: %s", reason)
 	}
 }
 

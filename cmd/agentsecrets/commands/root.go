@@ -7,9 +7,11 @@ import (
 	"github.com/The-17/agentsecrets/pkg/api"
 	"github.com/The-17/agentsecrets/pkg/auth"
 	"github.com/The-17/agentsecrets/pkg/config"
+	"github.com/The-17/agentsecrets/pkg/keychainauth"
 	"github.com/The-17/agentsecrets/pkg/telemetry"
 	"github.com/The-17/agentsecrets/pkg/ui"
 	"github.com/The-17/agentsecrets/pkg/workspaces"
+	"errors"
 	"fmt"
 	"os"
 )
@@ -49,7 +51,7 @@ var rootCmd = &cobra.Command{
 func Execute() error {
 	ui.CLIVersion = Version
 	// Ensure keychain-auth socket is closed on exit
-	// defer keychainauth.Close()
+	defer keychainauth.Close()
 
 	// Run update check. It's efficient (24h interval) and has a short timeout.
 	if res, _ := config.CheckForUpdates(Version); res != nil && res.NewVersionAvailable {
@@ -134,36 +136,24 @@ func init() {
 
 // keychainAuthMiddleware is a PersistentPreRunE that ensures both:
 // 1. The user is authenticated (EnsureAuth)
-// 2. A keychain-auth session is established (keychainauth.Init)
+// 2. A keychain-auth connection is established (keychainauth.Init)
 //
 // If keychain-auth is not installed or not running, it performs automatic
-// setup with a spinner and explanatory message so the user understands
-// what is happening and why.
+// setup with a spinner so the user never has to think about it.
 func keychainAuthMiddleware(cmd *cobra.Command, args []string) error {
 	// Step 1: Ensure the user is logged in
 	if err := authService.EnsureAuth(cmd, args); err != nil {
 		return err
 	}
 
-	// keychain-auth integration is temporarily disabled in v1.3.0 
-	// to ensure cross-platform stability (Windows support).
-	// We will revert to direct keyring access for now.
-	return nil
-
-	/*
-	// Step 2: Skip if session already established (e.g. parent command already ran this)
+	// Step 2: Skip if connection already established (e.g. parent command already ran this)
 	if keychainauth.IsInitialized() {
 		return nil
 	}
 
-	// Step 3: If keychain-auth isn't available, run auto-setup
-	if !keychainauth.IsAvailable() {
-		fmt.Println()
-		ui.Info("Setting up keychain-auth — this secures your secrets with process-level verification.")
-		ui.Info("This is a one-time setup that runs automatically.")
-		fmt.Println()
-
-		if err := ui.Spinner("Installing and configuring keychain-auth...", func() error {
+	// Step 3: If keychain-auth isn't available or we're not fully configured, run auto-setup with a spinner
+	if !keychainauth.IsAvailable() || !keychainauth.IsFullyConfigured() {
+		if err := ui.Spinner("Setting up keychain-auth...", func() error {
 			return keychainauth.AutoSetup()
 		}); err != nil {
 			ui.Error("keychain-auth setup failed: " + err.Error())
@@ -174,18 +164,38 @@ func keychainAuthMiddleware(cmd *cobra.Command, args []string) error {
 			fmt.Println()
 			return fmt.Errorf("keychain-auth is required for secret operations")
 		}
-
-		ui.Success("keychain-auth configured successfully.")
-		fmt.Println()
 	}
 
 	err := keychainauth.Init()
 	if err != nil {
-		// If the binary hash or path changed (e.g. after rebuild or Homebrew upgrade), re-register and restart daemon
-		var rejected *keychainauth.SessionRejectedError
-		if errors.As(err, &rejected) && (rejected.IsHashMismatch() || rejected.IsPathMismatch()) {
+		// If the daemon is not running (e.g. stale socket file exists but connection refused),
+		// clean up the stale socket and attempt to start/setup the daemon transparently.
+		var notRunning *keychainauth.DaemonNotRunningError
+		if errors.As(err, &notRunning) {
 			keychainauth.Close()
-			// Re-register, then restart daemon so it reloads the config
+			_ = os.Remove(keychainauth.SocketPath())
+
+			if errSetup := ui.Spinner("Setting up keychain-auth...", func() error {
+				return keychainauth.AutoSetup()
+			}); errSetup != nil {
+				ui.Error("keychain-auth setup failed: " + errSetup.Error())
+				fmt.Println()
+				ui.Info("You can set it up manually:")
+				ui.Info("  brew install The-17/tap/keychain-auth")
+				ui.Info("  keychain-auth start")
+				fmt.Println()
+				return fmt.Errorf("keychain-auth is required for secret operations")
+			}
+
+			err = keychainauth.Init()
+		}
+	}
+	if err != nil {
+		// If the binary is unregistered or hash changed (e.g. after rebuild or upgrade),
+		// re-register and restart the daemon transparently.
+		var denied *keychainauth.DaemonDeniedError
+		if errors.As(err, &denied) && (denied.IsUnregistered() || denied.IsHashMismatch()) {
+			keychainauth.Close()
 			_ = keychainauth.AutoSetup()
 			_ = keychainauth.RestartDaemon()
 			err = keychainauth.Init()
@@ -196,5 +206,5 @@ func keychainAuthMiddleware(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
-	*/
 }
+

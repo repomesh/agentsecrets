@@ -53,7 +53,6 @@ var logoutCmd = &cobra.Command{
 
 		fmt.Println()
 		ui.Success("Logged out successfully.")
-		ui.Info("Run 'agentsecrets login' to log in again.")
 		return nil
 	},
 }

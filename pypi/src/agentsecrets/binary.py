@@ -124,6 +124,19 @@ def ensure_binary():
             # Ensure executable
             st = os.stat(binary_path)
             os.chmod(binary_path, st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+            # Pre-register with keychain-auth if available. This eliminates
+            # the one-time setup spinner on the user's first command.
+            import subprocess
+            kc = shutil.which("keychain-auth")
+            if kc:
+                try:
+                    subprocess.run(
+                        [kc, "register", binary_path],
+                        timeout=5, capture_output=True,
+                    )
+                except Exception:
+                    pass  # AutoSetup handles registration at runtime if needed
             
         return binary_path
         

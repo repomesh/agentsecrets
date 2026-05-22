@@ -6,50 +6,47 @@ import (
 	"testing"
 )
 
-func TestUserMessage_SessionRejected(t *testing.T) {
+func TestUserMessage_DaemonDenied(t *testing.T) {
 	tests := []struct {
-		reason rejectReason
-		want   string
+		reason   reasonCode
+		contains string
 	}{
-		{reasonHashMismatch, "Security check failed: AgentSecrets binary has been modified. Reinstall to continue."},
-		{reasonInvalidPID, "keychain-auth could not verify this process. Try again or reinstall AgentSecrets."},
-		{reasonPathMismatch, "keychain-auth does not recognize this binary location. Run 'agentsecrets init' to re-register, or reinstall AgentSecrets."},
-		{reasonUnsupportedProtocol, "keychain-auth version is incompatible. Run: keychain-auth upgrade"},
-		{rejectReason("UNKNOWN_REASON"), "keychain-auth rejected the session: UNKNOWN_REASON"},
+		{reasonUnregisteredBinary, "not yet registered"},
+		{reasonHashMismatch, "binary has changed"},
+		{reasonActionNotInPolicy, "policy does not allow this operation"},
+		{reasonServiceNotAllowed, "policy does not allow AgentSecrets"},
+		{reasonTargetNotAllowed, "policy does not allow access"},
+		{reasonMalformedRequest, "malformed request"},
+		{reasonInternalError, "internal error"},
+		{reasonCode("unknown_reason"), "unknown_reason"},
 	}
 
 	for _, tt := range tests {
 		t.Run(string(tt.reason), func(t *testing.T) {
-			err := &SessionRejectedError{Reason: tt.reason}
+			err := &DaemonDeniedError{Reason: tt.reason}
 			got := UserMessage(err)
-			if got != tt.want {
-				t.Errorf("UserMessage() = %v, want %v", got, tt.want)
+			if !strings.Contains(got, tt.contains) {
+				t.Errorf("UserMessage() = %q, want it to contain %q", got, tt.contains)
 			}
 		})
 	}
 }
 
-func TestUserMessage_SecretDenied(t *testing.T) {
-	tests := []struct {
-		reason rejectReason
-		want   string
-	}{
-		{reasonSecretNotFound, `Secret "MY_KEY" not found in keychain — run 'agentsecrets secrets pull' to sync from cloud`},
-		{reasonSessionExpired, "Session expired — the AgentSecrets process may have been replaced. Restart and try again."},
-		{reasonSessionInvalidated, "Session invalidated — the AgentSecrets binary was modified while running. Restart and try again."},
-		{reasonUnknownSession, "No active keychain-auth session. This is a bug — please report it."},
-		{reasonInvalidKey, `Invalid key name "MY_KEY" — key names must not contain slashes, colons, or dots`},
-		{rejectReason("UNKNOWN_REASON"), `keychain-auth denied access to "MY_KEY": UNKNOWN_REASON`},
+func TestDaemonDeniedError_Checks(t *testing.T) {
+	unreg := &DaemonDeniedError{Reason: reasonUnregisteredBinary}
+	if !unreg.IsUnregistered() {
+		t.Error("IsUnregistered() should be true for unregistered_binary_pending_approval")
+	}
+	if unreg.IsHashMismatch() {
+		t.Error("IsHashMismatch() should be false for unregistered_binary_pending_approval")
 	}
 
-	for _, tt := range tests {
-		t.Run(string(tt.reason), func(t *testing.T) {
-			err := &SecretDeniedError{Key: "MY_KEY", Reason: tt.reason}
-			got := UserMessage(err)
-			if got != tt.want {
-				t.Errorf("UserMessage() = %v, want %v", got, tt.want)
-			}
-		})
+	hash := &DaemonDeniedError{Reason: reasonHashMismatch}
+	if hash.IsUnregistered() {
+		t.Error("IsUnregistered() should be false for hash_mismatch_during_fork")
+	}
+	if !hash.IsHashMismatch() {
+		t.Error("IsHashMismatch() should be true for hash_mismatch_during_fork")
 	}
 }
 

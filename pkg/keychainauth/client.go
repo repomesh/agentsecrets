@@ -2,34 +2,31 @@ package keychainauth
 
 import (
 	"bufio"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"os"
-	"path/filepath"
+	"strings"
 	"sync"
 )
 
-// activeSession holds the in-memory session state for the current process.
-// The session token is NEVER written to disk, logged, or exposed to the agent.
+// conn holds the persistent connection to the keychain-auth daemon.
+// The connection itself is the authenticated session — no tokens needed.
 var (
-	conn               net.Conn
-	activeSessionToken string
-	sessionMu          sync.Mutex
-	initialized        bool
+	conn        net.Conn
+	scanner     *bufio.Scanner
+	encoder     *json.Encoder
+	sessionMu   sync.Mutex
+	initialized bool
 )
 
-// Init connects to the keychain-auth daemon and performs the SESSION_INIT handshake.
+// Init connects to the keychain-auth daemon.
 //
-// This must be called once per process lifetime before any GetSecret() call.
-// The session token is stored in memory only. The binary hash is computed fresh
-// on every call — it is never cached between invocations.
+// The daemon verifies the caller process at connection time using kernel-level
+// peer credentials (PID, binary path, binary hash). If the binary is not
+// registered, the daemon immediately sends a denied response and closes.
 //
-// If the daemon is not running, Init returns a *DaemonNotRunningError with
-// a user-facing message explaining how to fix it.
+// This must be called once per process lifetime before any secret operations.
 func Init() error {
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
@@ -45,161 +42,66 @@ func Init() error {
 		return &DaemonNotRunningError{SocketPath: sockPath, Cause: err}
 	}
 
-	// Step 2: Connect to the Unix socket
-	c, err := net.Dial("unix", sockPath)
+	// Step 2: Connect to the Unix socket with SOCK_CLOEXEC to prevent
+	// file descriptor leakage to child processes (agentsecrets env/exec).
+	c, err := dialCLOEXEC(sockPath)
 	if err != nil {
 		return &DaemonNotRunningError{SocketPath: sockPath, Cause: err}
 	}
 
-	// Step 3: Compute self-identity (fresh every time, never cached)
-	// Resolve symlinks so the path matches what the daemon sees via
-	// /proc/PID/exe (Linux) or proc_pidpath (macOS). On macOS, Homebrew
-	// installs to Cellar and symlinks into /opt/homebrew/bin — without
-	// resolving, the daemon sees the Cellar path but we'd send the symlink.
-	selfPath, err := os.Executable()
-	if err != nil {
-		c.Close()
-		return fmt.Errorf("keychainauth: cannot determine own executable path: %w", err)
-	}
-	selfPath, err = filepath.EvalSymlinks(selfPath)
-	if err != nil {
-		c.Close()
-		return fmt.Errorf("keychainauth: cannot resolve executable symlinks: %w", err)
-	}
+	// Step 3: The daemon verifies us at connection time. If our binary is
+	// unregistered, it sends a RESPONSE with status="denied" immediately.
+	// We probe for this by setting a short read deadline.
+	sc := bufio.NewScanner(c)
+	sc.Buffer(make([]byte, 0, 64*1024), 64*1024)
 
-	selfHash, err := hashBinary(selfPath)
-	if err != nil {
-		c.Close()
-		return fmt.Errorf("keychainauth: cannot hash own binary: %w", err)
-	}
-
-	// Step 4: Send SESSION_INIT
-	enc := json.NewEncoder(c)
-	if err := enc.Encode(sessionInitMsg{
-		Type:            typeSessionInit,
-		PID:             os.Getpid(),
-		BinaryPath:      selfPath,
-		BinaryHash:      selfHash,
-		ProtocolVersion: "1",
-	}); err != nil {
-		c.Close()
-		return fmt.Errorf("keychainauth: failed to send SESSION_INIT: %w", err)
-	}
-
-	// Step 5: Read response
-	scanner := bufio.NewScanner(c)
-	scanner.Buffer(make([]byte, 0, 64*1024), 64*1024)
-	if !scanner.Scan() {
-		c.Close()
-		if err := scanner.Err(); err != nil {
-			return fmt.Errorf("keychainauth: failed to read session response: %w", err)
+	// Try to read an immediate denial. Use a brief deadline so we don't
+	// block forever if the daemon accepted us silently (the happy path).
+	_ = c.SetReadDeadline(timeNow().Add(connectionProbeTimeout))
+	if sc.Scan() {
+		// The daemon sent something — this means we were denied.
+		var env envelope
+		if err := json.Unmarshal(sc.Bytes(), &env); err == nil {
+			if env.Status == "denied" || env.Status == "error" {
+				c.Close()
+				return &DaemonDeniedError{Reason: env.Reason}
+			}
 		}
-		return fmt.Errorf("keychainauth: connection closed before session response")
-	}
-
-	var env envelope
-	raw := scanner.Bytes()
-	if err := json.Unmarshal(raw, &env); err != nil {
+		// Unexpected message — close and report
 		c.Close()
-		return fmt.Errorf("keychainauth: invalid response from daemon: %w", err)
+		return fmt.Errorf("keychainauth: unexpected message from daemon on connect")
 	}
 
-	switch env.Type {
-	case typeSessionAccepted:
-		var accepted sessionAcceptedMsg
-		if err := json.Unmarshal(raw, &accepted); err != nil {
+	// sc.Scan() returned false — either timeout (good: daemon accepted us)
+	// or a real error. Check if it's a timeout.
+	if err := sc.Err(); err != nil {
+		// If it's a timeout, that's expected — the daemon accepted us silently.
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			// Good — daemon accepted the connection. Clear the deadline.
+			_ = c.SetReadDeadline(timeZero)
+		} else {
 			c.Close()
-			return fmt.Errorf("keychainauth: malformed SESSION_ACCEPTED: %w", err)
+			return fmt.Errorf("keychainauth: connection error: %w", err)
 		}
-		activeSessionToken = accepted.SessionToken
-		conn = c
-		initialized = true
-		return nil
-
-	case typeSessionRejected:
+	} else {
+		// EOF without error — daemon closed connection
 		c.Close()
-		var rejected sessionRejectedMsg
-		if err := json.Unmarshal(raw, &rejected); err != nil {
-			return fmt.Errorf("keychainauth: malformed SESSION_REJECTED: %w", err)
-		}
-		return &SessionRejectedError{Reason: rejected.Reason}
-
-	default:
-		c.Close()
-		return fmt.Errorf("keychainauth: unexpected response type %q", env.Type)
-	}
-}
-
-// GetSecret sends a SECRET_REQUEST to keychain-auth and returns the plaintext value.
-//
-// The key is the bare secret name (e.g., "OPENAI_API_KEY"). The projectID and
-// environment are sent alongside it — keychain-auth constructs the full
-// {projectID}:{environment}:{key} keychain key internally.
-//
-// The returned value should be used immediately and not stored in any persistent
-// variable, struct field, log, or error message.
-func GetSecret(projectID, environment, key string) (string, error) {
-	sessionMu.Lock()
-	defer sessionMu.Unlock()
-
-	if !initialized || activeSessionToken == "" {
-		return "", fmt.Errorf("keychainauth: no active session — call Init() first")
+		return fmt.Errorf("keychainauth: daemon closed connection immediately")
 	}
 
-	// Send SECRET_REQUEST
-	enc := json.NewEncoder(conn)
-	if err := enc.Encode(secretRequestMsg{
-		Type:         typeSecretRequest,
-		SessionToken: activeSessionToken,
-		ProjectID:    projectID,
-		Environment:  environment,
-		Key:          key,
-	}); err != nil {
-		return "", fmt.Errorf("keychainauth: failed to send SECRET_REQUEST: %w", err)
-	}
+	// Re-create scanner after the probe (the old one may have buffered state)
+	sc = bufio.NewScanner(c)
+	sc.Buffer(make([]byte, 0, 64*1024), 64*1024)
 
-	// Read response (single line of newline-delimited JSON)
-	scanner := bufio.NewScanner(conn)
-	scanner.Buffer(make([]byte, 0, 64*1024), 64*1024)
-	if !scanner.Scan() {
-		// Connection dropped — do not reconnect, surface error
-		initialized = false
-		activeSessionToken = ""
-		if err := scanner.Err(); err != nil {
-			return "", fmt.Errorf("keychainauth: connection lost during secret read: %w", err)
-		}
-		return "", fmt.Errorf("keychainauth: connection closed by daemon")
-	}
-
-	var env envelope
-	raw := scanner.Bytes()
-	if err := json.Unmarshal(raw, &env); err != nil {
-		return "", fmt.Errorf("keychainauth: invalid response: %w", err)
-	}
-
-	switch env.Type {
-	case typeSecretResponse:
-		var resp secretResponseMsg
-		if err := json.Unmarshal(raw, &resp); err != nil {
-			return "", fmt.Errorf("keychainauth: malformed SECRET_RESPONSE: %w", err)
-		}
-		return resp.Value, nil
-
-	case typeSecretDenied:
-		var denied secretDeniedMsg
-		if err := json.Unmarshal(raw, &denied); err != nil {
-			return "", fmt.Errorf("keychainauth: malformed SECRET_DENIED: %w", err)
-		}
-		return "", &SecretDeniedError{Key: denied.Key, Reason: denied.Reason}
-
-	default:
-		return "", fmt.Errorf("keychainauth: unexpected response type %q", env.Type)
-	}
+	conn = c
+	scanner = sc
+	encoder = json.NewEncoder(c)
+	initialized = true
+	return nil
 }
 
 // Close tears down the Unix socket connection to keychain-auth.
-// Safe to call multiple times. Should be deferred from main or called
-// in a signal handler.
+// Safe to call multiple times. Should be deferred from main.
 func Close() {
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
@@ -208,38 +110,226 @@ func Close() {
 		conn.Close()
 		conn = nil
 	}
-	activeSessionToken = ""
+	scanner = nil
+	encoder = nil
 	initialized = false
 }
 
 // IsAvailable checks whether the keychain-auth socket file exists on disk.
-// This is a quick probe — it does not attempt a connection.
 func IsAvailable() bool {
 	_, err := os.Stat(SocketPath())
 	return err == nil
 }
 
-// IsInitialized returns true if a session has been successfully established.
+// IsInitialized returns true if a connection has been successfully established.
 func IsInitialized() bool {
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
 	return initialized
 }
 
-// --- Internal helpers ---
+// --- Secret CRUD operations ---
 
-// hashBinary computes the SHA-256 hash of a file and returns it in the
-// "sha256:<hex>" format expected by keychain-auth.
-func hashBinary(path string) (string, error) {
-	f, err := os.Open(path)
+// SetSecret stores a secret in the OS keychain via keychain-auth.
+func SetSecret(projectID, environment, key, value string) error {
+	target := formatTarget(projectID, environment, key)
+	_, err := sendRequest(request{
+		Type:    typeRequest,
+		Action:  actionWrite,
+		Service: serviceName,
+		Targets: []string{target},
+		Values:  []string{value},
+	})
+	return err
+}
+
+// GetSecret retrieves a single secret from the OS keychain via keychain-auth.
+func GetSecret(projectID, environment, key string) (string, error) {
+	target := formatTarget(projectID, environment, key)
+	resp, err := sendRequest(request{
+		Type:    typeRequest,
+		Action:  actionRead,
+		Service: serviceName,
+		Targets: []string{target},
+	})
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
-
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
+	if len(resp.Results) == 0 {
+		return "", fmt.Errorf("secret %q not found", key)
 	}
-	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
+	return resp.Results[0].Value, nil
+}
+
+// DeleteSecret removes a secret from the OS keychain via keychain-auth.
+func DeleteSecret(projectID, environment, key string) error {
+	target := formatTarget(projectID, environment, key)
+	_, err := sendRequest(request{
+		Type:    typeRequest,
+		Action:  actionDelete,
+		Service: serviceName,
+		Targets: []string{target},
+	})
+	return err
+}
+
+// GetAllProjectSecrets returns all secrets for a project+environment as a
+// key→value map. Uses a prefix read to fetch everything in a single round-trip.
+func GetAllProjectSecrets(projectID, environment string) (map[string]string, error) {
+	prefix := formatPrefix(projectID, environment)
+	resp, err := sendRequest(request{
+		Type:    typeRequest,
+		Action:  actionRead,
+		Service: serviceName,
+		Match:   matchPrefix,
+		Targets: []string{prefix},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]string, len(resp.Results))
+	for _, item := range resp.Results {
+		bare := stripPrefix(item.Target, prefix)
+		if bare != "" {
+			result[bare] = item.Value
+		}
+	}
+	return result, nil
+}
+
+// ListProjectKeyNames returns just the key names for a project+environment.
+// Uses a search operation — no secret values are read.
+func ListProjectKeyNames(projectID, environment string) ([]string, error) {
+	prefix := formatPrefix(projectID, environment)
+	resp, err := sendRequest(request{
+		Type:    typeRequest,
+		Action:  actionSearch,
+		Service: serviceName,
+		Targets: []string{prefix},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	keys := make([]string, 0, len(resp.Results))
+	for _, item := range resp.Results {
+		bare := stripPrefix(item.Target, prefix)
+		if bare != "" {
+			keys = append(keys, bare)
+		}
+	}
+	return keys, nil
+}
+
+// SetWorkspaceAllowlist stores the domain allowlist for a workspace.
+func SetWorkspaceAllowlist(workspaceID string, domains []string) error {
+	target := formatAllowlistTarget(workspaceID)
+	valBytes, err := json.Marshal(domains)
+	if err != nil {
+		return fmt.Errorf("serialize allowlist: %w", err)
+	}
+	_, err = sendRequest(request{
+		Type:    typeRequest,
+		Action:  actionWrite,
+		Service: serviceName,
+		Targets: []string{target},
+		Values:  []string{string(valBytes)},
+	})
+	return err
+}
+
+// GetWorkspaceAllowlist retrieves the domain allowlist for a workspace.
+func GetWorkspaceAllowlist(workspaceID string) ([]string, error) {
+	target := formatAllowlistTarget(workspaceID)
+	resp, err := sendRequest(request{
+		Type:    typeRequest,
+		Action:  actionRead,
+		Service: serviceName,
+		Targets: []string{target},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(resp.Results) == 0 {
+		return []string{}, nil
+	}
+
+	var domains []string
+	if err := json.Unmarshal([]byte(resp.Results[0].Value), &domains); err != nil {
+		return nil, fmt.Errorf("parse allowlist: %w", err)
+	}
+	return domains, nil
+}
+
+// --- Internal helpers ---
+
+// sendRequest sends a request to the daemon and reads the response.
+// The caller must NOT hold sessionMu.
+func sendRequest(req request) (*response, error) {
+	sessionMu.Lock()
+	defer sessionMu.Unlock()
+
+	if !initialized {
+		return nil, fmt.Errorf("keychainauth: not initialized — call Init() first")
+	}
+
+	req.Type = typeRequest
+
+	// Send request as a single newline-delimited JSON line
+	if err := encoder.Encode(req); err != nil {
+		initialized = false
+		return nil, fmt.Errorf("keychainauth: failed to send request: %w", err)
+	}
+
+	// Read response
+	if !scanner.Scan() {
+		initialized = false
+		if err := scanner.Err(); err != nil {
+			return nil, fmt.Errorf("keychainauth: connection lost: %w", err)
+		}
+		return nil, fmt.Errorf("keychainauth: connection closed by daemon")
+	}
+
+	var resp response
+	raw := scanner.Bytes()
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, fmt.Errorf("keychainauth: invalid response: %w", err)
+	}
+
+	switch resp.Status {
+	case "success":
+		return &resp, nil
+	case "denied":
+		return nil, &DaemonDeniedError{Reason: resp.Reason}
+	case "error":
+		return nil, &DaemonDeniedError{Reason: resp.Reason}
+	default:
+		return nil, fmt.Errorf("keychainauth: unexpected response status %q", resp.Status)
+	}
+}
+
+func formatTarget(projectID, environment, key string) string {
+	if environment == "" {
+		environment = "development"
+	}
+	return fmt.Sprintf("%s:%s:%s", projectID, environment, key)
+}
+
+func formatPrefix(projectID, environment string) string {
+	if environment == "" {
+		environment = "development"
+	}
+	return fmt.Sprintf("%s:%s:", projectID, environment)
+}
+
+func formatAllowlistTarget(workspaceID string) string {
+	return fmt.Sprintf("agentsecrets:allowlist:%s", workspaceID)
+}
+
+func stripPrefix(target, prefix string) string {
+	if strings.HasPrefix(target, prefix) {
+		return target[len(prefix):]
+	}
+	return ""
 }

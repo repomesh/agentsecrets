@@ -131,8 +131,8 @@ npm install -g @the-17/agentsecrets
 # pip
 pip install agentsecrets-cli
 
-# Go
-go install github.com/The-17/agentsecrets/cmd/agentsecrets@latest
+# Go (recommend using a pinned version for supply chain security)
+go install github.com/The-17/agentsecrets/cmd/agentsecrets@v2.0.0
 ```
 
 ---
@@ -502,6 +502,15 @@ agentsecrets agent token revoke <id> --agent="<n>"
 ---
 
 ## Security
+
+### Trust Model & OS Keychain
+AgentSecrets delegates authentication and cryptography to the user's local OS keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service). Be mindful of which workspace and environment you configure for your agents, as they will have access to any credentials provisioned in that specific scope. However, unwanted actions and API calls are heavily mitigated by the domain allowlist, which bounds where agents can send those credentials.
+
+### Audit Logging Privacy
+Every proxy call is recorded in a persistent audit log (locally at `~/.agentsecrets/proxy.log` and globally in the cloud). The log records endpoints, timestamps, and key names (e.g., `STRIPE_KEY`), but never the actual values. **Do not put sensitive data in the key names themselves.**
+
+### Supply Chain Security
+Your security depends on the integrity of the installed `agentsecrets` package. We strongly recommend installing from official sources (like Homebrew) which verify package hashes, or using pinned versions for `go install` (e.g., `@v2.0.0` instead of `@latest`) to mitigate upstream supply chain poisoning.
 
 Vulnerabilities: do NOT open public issues.
 Email: engineering@theseventeen.co, response within 24 hours.

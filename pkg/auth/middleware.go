@@ -45,8 +45,6 @@ func (s *Service) EnsureAuth(cmd *cobra.Command, args []string) error {
 			return s.RefreshSession(refreshToken)
 		}); err != nil {
 			ui.Warning("Session refresh failed, you may need to log in again: " + err.Error())
-		} else {
-			ui.Success("Session token automatically refreshed.")
 		}
 	}
 

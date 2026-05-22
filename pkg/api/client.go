@@ -254,21 +254,30 @@ func (c *Client) DecodeError(resp *http.Response) error {
 		return fmt.Errorf("API request failed with status %d (failed to read body: %v)", resp.StatusCode, err)
 	}
 
+	var baseErr error
 	if err := json.Unmarshal(bodyBytes, &errResp); err == nil {
 		for _, msg := range []string{errResp.Message, errResp.Error, errResp.Detail} {
 			if msg != "" {
-				return fmt.Errorf("API error: %s (status %d)", msg, resp.StatusCode)
+				baseErr = fmt.Errorf("API error: %s (status %d)", msg, resp.StatusCode)
+				break
 			}
 		}
 	}
 
-	bodySnippet := string(bodyBytes)
-
-	if bodySnippet != "" {
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, bodySnippet)
+	if baseErr == nil {
+		bodySnippet := string(bodyBytes)
+		if bodySnippet != "" {
+			baseErr = fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, bodySnippet)
+		} else {
+			baseErr = fmt.Errorf("API request failed with status %d (empty body)", resp.StatusCode)
+		}
 	}
 
-	return fmt.Errorf("API request failed with status %d (empty body)", resp.StatusCode)
+	if resp.StatusCode == 401 {
+		return fmt.Errorf("%w. Your session may have expired. Please run 'agentsecrets login' to authenticate again.", baseErr)
+	}
+
+	return baseErr
 }
 
 // resolveEndpoint converts "category.action" + params into a URL path

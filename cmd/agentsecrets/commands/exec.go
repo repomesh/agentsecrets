@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/The-17/agentsecrets/pkg/config"
+	"github.com/The-17/agentsecrets/pkg/keychainauth"
 	"github.com/The-17/agentsecrets/pkg/keyring"
 )
 
@@ -117,14 +118,10 @@ func runExec(cmd *cobra.Command, args []string) {
 	os.Exit(0)
 }
 
-// ensureKeychainAuthForExec establishes a keychain-auth session for the exec command.
+// ensureKeychainAuthForExec establishes a keychain-auth connection for the exec command.
 // exec is a machine-to-machine protocol (stdin/stdout JSON) so we use stderr
 // for any setup messages and skip the spinner UI.
 func ensureKeychainAuthForExec() error {
-	// keychain-auth integration is temporarily disabled in v1.3.0
-	return nil
-
-	/*
 	if keychainauth.IsInitialized() {
 		return nil
 	}
@@ -136,6 +133,5 @@ func ensureKeychainAuthForExec() error {
 	}
 
 	return keychainauth.Init()
-	*/
 }
 

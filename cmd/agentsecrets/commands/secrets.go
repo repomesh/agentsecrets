@@ -155,16 +155,18 @@ func runSecretsSet(cmd *cobra.Command, args []string) error {
 
 func runSecretsGet(cmd *cobra.Command, args []string) error {
 	key := args[0]
+	var val string
 
 	if err := ui.Spinner(fmt.Sprintf("Retrieving %s...", key), func() error {
-		_, e := secretsService.Get(key)
+		var e error
+		val, e = secretsService.Get(key)
 		return e
 	}); err != nil {
 		ui.Error(fmt.Sprintf("Get secret: %v", err))
 		return nil
 	}
 
-	fmt.Printf("\n%s\n", ui.BrandStyle.Render(key))
+	fmt.Printf("\n%s\n", val)
 	return nil
 }
 
@@ -185,7 +187,10 @@ func runSecretsList(cmd *cobra.Command, args []string) error {
 	allKeysSet := make(map[string]bool)
 
 	for i, env := range envs {
-		keys := keyring.ListProjectKeyNames(project.ProjectID, env)
+		keys, err := keyring.ListProjectKeyNames(project.ProjectID, env)
+		if err != nil {
+			return fmt.Errorf("Could not check (keychain-auth denied request: %w)", err)
+		}
 		for _, k := range keys {
 			p := presence[k]
 			p[i] = true
@@ -606,12 +611,9 @@ func runSecretsDiff(cmd *cobra.Command, args []string) error {
 		targetName = upperFirst(config.ResolveEnvironment())
 	}
 
-	if len(diff.Added) == 0 && len(diff.Removed) == 0 && len(diff.Changed) == 0 && !allowlistDrift {
-		ui.Success(fmt.Sprintf("%s and %s are in sync!", sourceName, targetName))
-		return nil
-	}
+	// The SECRETS block will now always print and show what's identical.
 
-	if len(diff.Added) > 0 || len(diff.Removed) > 0 || len(diff.Changed) > 0 {
+	if len(diff.Added) > 0 || len(diff.Removed) > 0 || len(diff.Changed) > 0 || len(diff.Unchanged) > 0 {
 		fmt.Printf("SECRETS:\n")
 		
 		fmt.Printf("\n  %s %s but missing in %s:\n", ui.LabelStyle.Render("In"), ui.BrandStyle.Render(sourceName), ui.BrandStyle.Render(targetName))
@@ -658,13 +660,15 @@ func runSecretsDiff(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Println()
 	}
-	if len(diff.Added) > 0 {
-		fmt.Printf("Run %s to upload local changes.\n", ui.BrandStyle.Render("agentsecrets secrets push"))
+	if diffFrom == "" {
+		if len(diff.Added) > 0 {
+			fmt.Printf("Run %s to upload local changes.\n", ui.BrandStyle.Render("agentsecrets secrets push"))
+		}
+		if len(diff.Removed) > 0 || len(diff.Changed) > 0 || allowlistDrift {
+			fmt.Printf("Run %s to sync from cloud.\n", ui.BrandStyle.Render("agentsecrets secrets pull"))
+		}
+		fmt.Println()
 	}
-	if len(diff.Removed) > 0 || len(diff.Changed) > 0 || allowlistDrift {
-		fmt.Printf("Run %s to sync from cloud.\n", ui.BrandStyle.Render("agentsecrets secrets pull"))
-	}
-	fmt.Println()
 
 	return nil
 }

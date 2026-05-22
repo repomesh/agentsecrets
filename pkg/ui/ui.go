@@ -20,15 +20,15 @@ var CLIVersion = "dev"
 
 // Brand colors
 var (
-	PrimaryColor = lipgloss.Color("#7DD3FC") // Sky Blue
-	Secondary    = lipgloss.Color("#BAE6FD") // Light Sky Blue
+	PrimaryColor = lipgloss.Color("#00C6A5") // Brand Teal Accent
+	Secondary    = lipgloss.Color("#5EEAD4") // Teal 300 — readable highlight
 	SuccessColor = lipgloss.Color("#34D399") // Emerald
-	ErrorColor   = lipgloss.Color("#FB7185") // Rose
-	WarningColor = lipgloss.Color("#FCD34D") // Soft Amber
-	Dim          = lipgloss.Color("#71717A") // Zinc 500 (Clean grey)
-	White        = lipgloss.Color("#F4F4F5") // Zinc 100
-	DimText      = lipgloss.Color("#A1A1AA") // Zinc 400
-	FaintBorder  = lipgloss.Color("#27272A") // Zinc 800 (Faint Border)
+	ErrorColor   = lipgloss.Color("#F87171") // Red 400
+	WarningColor = lipgloss.Color("#FBBF24") // Amber 400
+	Dim          = lipgloss.Color("#6B7280") // Gray 500
+	White        = lipgloss.Color("#F9FAFB") // Gray 50
+	DimText      = lipgloss.Color("#9CA3AF") // Gray 400
+	FaintBorder  = lipgloss.Color("#1F2937") // Gray 800
 )
 
 // Reusable styles
@@ -109,41 +109,49 @@ func ErrorWithSuggestions(err error, suggestions ...string) {
 	// Add user-provided suggestions first
 	dynamicSuggestions = append(dynamicSuggestions, suggestions...)
 
-	if strings.Contains(errStr, "status 401") || strings.Contains(errStr, "unauthorized") {
-		dynamicSuggestions = append(dynamicSuggestions,
-			"Your active session may have expired. Try logging in again: 'agentsecrets login'.",
-			"Verify that you are targeting the correct workspace.",
-		)
-	}
-	if strings.Contains(errStr, "logged in") || strings.Contains(errStr, "login") || strings.Contains(errStr, "not authenticated") {
-		dynamicSuggestions = append(dynamicSuggestions,
-			"Run 'agentsecrets login' to authenticate your current terminal session.",
-			"If you do not have an account yet, run 'agentsecrets init' to create one.",
-		)
-	}
-	if strings.Contains(errStr, "status 403") || strings.Contains(errStr, "forbidden") {
-		dynamicSuggestions = append(dynamicSuggestions,
-			"You might not have sufficient permissions (Admin or Owner role) to perform this action.",
-			"Check your role assignment in this workspace: 'agentsecrets workspace members'.",
-		)
-	}
-	if strings.Contains(errStr, "connection refused") || strings.Contains(errStr, "no such host") || strings.Contains(errStr, "timeout") {
-		dynamicSuggestions = append(dynamicSuggestions,
-			"Verify that you have an active internet connection.",
-			"Ensure the backend API service is reachable and not blocked by your firewall or proxy.",
-		)
-	}
-	if strings.Contains(errStr, "keyring") || strings.Contains(errStr, "keychain") || strings.Contains(errStr, "secret service") || strings.Contains(errStr, "dbus") {
-		dynamicSuggestions = append(dynamicSuggestions,
-			"Verify that your OS Keychain / Credential Manager is unlocked.",
-			"For SSH/headless Linux environments, configure dbus or gnome-keyring properly.",
-		)
-	}
-	if strings.Contains(errStr, "status 500") {
-		dynamicSuggestions = append(dynamicSuggestions,
-			"This indicates an internal server error on the AgentSecrets API service.",
-			"Please report this by emailing engineering@theseventeen.co with the template below.",
-		)
+	// Skip dynamic suggestions for Cobra CLI parsing errors which might accidentally match keywords (like 'login' in 'Did you mean')
+	if !strings.Contains(errStr, "unknown command") && !strings.Contains(errStr, "unknown flag") {
+		if strings.Contains(errStr, "status 401") || strings.Contains(errStr, "unauthorized") {
+			dynamicSuggestions = append(dynamicSuggestions,
+				"Your active session may have expired. Try logging in again: 'agentsecrets login'.",
+				"Verify that you are targeting the correct workspace.",
+			)
+		}
+		if strings.Contains(errStr, "logged in") || strings.Contains(errStr, "login") || strings.Contains(errStr, "not authenticated") {
+			dynamicSuggestions = append(dynamicSuggestions,
+				"Run 'agentsecrets login' to authenticate your current terminal session.",
+				"If you do not have an account yet, run 'agentsecrets init' to create one.",
+			)
+		}
+		if strings.Contains(errStr, "status 403") || strings.Contains(errStr, "forbidden") {
+			dynamicSuggestions = append(dynamicSuggestions,
+				"You might not have sufficient permissions (Admin or Owner role) to perform this action.",
+				"Check your role assignment in this workspace: 'agentsecrets workspace members'.",
+			)
+		}
+		if strings.Contains(errStr, "connection refused") || strings.Contains(errStr, "no such host") || strings.Contains(errStr, "timeout") {
+			dynamicSuggestions = append(dynamicSuggestions,
+				"Verify that you have an active internet connection.",
+				"Ensure the backend API service is reachable and not blocked by your firewall or proxy.",
+			)
+		}
+		if strings.Contains(errStr, "keychain-auth denied") || strings.Contains(errStr, "unregistered_binary") {
+			dynamicSuggestions = append(dynamicSuggestions,
+				"This binary is not approved to access your secrets.",
+				"Run 'agentsecrets' in your terminal to trigger the auto-approval setup flow.",
+			)
+		} else if strings.Contains(errStr, "keyring") || strings.Contains(errStr, "keychain") || strings.Contains(errStr, "secret service") || strings.Contains(errStr, "dbus") {
+			dynamicSuggestions = append(dynamicSuggestions,
+				"Verify that your OS Keychain / Credential Manager is unlocked.",
+				"For SSH/headless Linux environments, configure dbus or gnome-keyring properly.",
+			)
+		}
+		if strings.Contains(errStr, "status 500") {
+			dynamicSuggestions = append(dynamicSuggestions,
+				"This indicates an internal server error on the AgentSecrets API service.",
+				"Please report this by emailing engineering@theseventeen.co with the template below.",
+			)
+		}
 	}
 
 	if len(dynamicSuggestions) > 0 {
