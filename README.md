@@ -1,17 +1,28 @@
 # AgentSecrets
 
-> Zero-knowledge AI Agent Secrets Management: secure API keys for AI agents without exposing credential values at runtime. Store, sync, inject, audit, and build on top of credentials your agents can use but never see.
+> **Zero-Knowledge Credential Infrastructure for AI Agents (and Humans and Teams)**: Secure key orchestration, sandboxed execution capabilities, and runtime delegation without ever exposing secret values to agent reasoning loops.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://go.dev/)
 [![Stars](https://img.shields.io/github/stars/The-17/agentsecrets?style=flat)](https://github.com/The-17/agentsecrets/stargazers)
-[![ClawHub](https://img.shields.io/badge/ClawHub-agentsecrets-blue)](https:/a/clawhub.ai/SteppaCodes/agentsecrets)
+[![ClawHub](https://img.shields.io/badge/ClawHub-agentsecrets-blue)](https://clawhub.ai/SteppaCodes/agentsecrets)
 
 **[Website](https://agentsecrets.theseventeen.co)** | **[Docs](https://agentsecrets.theseventeen.co/docs)** | **[Engineering Blog](https://engineering.theseventeen.co/series/building-agentsecrets)**
 
 ---
 
-AgentSecrets is the complete secrets management and credential infrastructure for the AI agent era. It covers secrets storage, zero-knowledge cloud sync, environment management, team workspaces, agent identity, audit logging, transport-layer credential injection, and an SDK for building on top, all without a credential value ever entering agent context., the agent sees only the API response. At no step does the agent hold, see, or have access to the actual credential value. The zero-knowledge guarantee is architectural, not policy-based. It is built into how the system works at every layer.
+AgentSecrets is the overarching zero-knowledge credential infrastructure for the AI era. It decouples credentials from the application runtime entirely, ensuring that agents execute tasks using credentials by reference without ever holding the raw values in memory. 
+
+To achieve this, AgentSecrets acts as an extensible infrastructure host. Specific security guarantees are enforced by **subsystems** that plug into AgentSecrets:
+
+| Subsystem / Layer | System | What It Solves | Novel Claim |
+|:------------------|:-------|:---------------|:------------|
+| **Credential Infrastructure** | AgentSecrets (Host) | Agent credential theft & lifecycle management | Extensible zero-knowledge infrastructure: credentials are resolved and injected at runtime without agents holding secret values |
+| **Intent Attestation Subsystem** | [SEC](https://github.com/The-17/SEC) | Agents misusing credentials they are allowed to access | Cryptographic pre-commitment to intent: binding API execution surfaces to pre-declared objectives |
+| **Capability Bounding Subsystem** | [Keychain-Auth](https://github.com/The-17/keychain-auth) | Static, long-lived, over-privileged local credentials | OS-level keychain integration with process identity validation and dynamic session bounding |
+
+Each subsystem represents a novel, independently publishable security primitive. The unified AgentSecrets infrastructure compiles these subsystems into a cohesive, provably secure framework. At no step does the agent hold, see, or have access to the actual credential value. The zero-knowledge guarantee is architectural, not policy-based.
+
 
 ---
 
@@ -97,21 +108,21 @@ The agent never retrieves the value. It cannot be prompted to reveal it. It cann
 
 ---
 
-## What AgentSecrets Is
+## Extensible Security Architecture
 
-**Credential proxy:** six auth injection styles, domain allowlist enforcement, response body redaction, SSRF protection, session token authentication.
+AgentSecrets hosts modular subsystems to provide layered defense-in-depth:
 
-**Zero-knowledge cloud sync:** X25519 key exchange, AES-256-GCM encryption, Argon2id key derivation. The server stores ciphertext it structurally cannot decrypt. The workspace key lives in the OS keychain and never reaches the server.
+**Zero-Knowledge Credential Core:** Six auth injection styles, client-side encryption (X25519, AES-256-GCM, Argon2id), response body redaction, SSRF protection, and environment variable injection (`agentsecrets env -- <cmd>`). The server stores client-encrypted ciphertext it structurally cannot decrypt.
 
-**Environment support:** development, staging, and production as first-class concepts. One command switches the active environment. The proxy resolves the right credentials automatically. Cross-environment diff shows coverage gaps.
+**Intent Attestation (SEC):** Enforces Signed Execution Contracts. Before the agent ingests untrusted text, the orchestrator signs a contract binding execution authority to a pre-declared natural-language objective and target URL glob patterns. The gateway verifies this deterministically, stopping prompt injections from hijacking credentials.
 
-**Team workspaces:** secrets encrypted client-side before upload. New developers onboard by pulling from the workspace. No .env files shared over Slack, no credential spreadsheets, no production keys in Slack DMs.
+**Capability Bounding (Keychain-Auth):** Protects OS keychain access via process verification (Anti-Impersonation). It verifies the cryptographic hash of calling processes (like the CLI or proxy) and restricts credentials to authorized execution namespaces with session capability boundaries.
 
-**Agent identity:** three levels: anonymous, declared, and cryptographically issued. Every proxy call is logged against the agent that made it. Tokens can be revoked per agent without touching anything else.
+**Environments & Teams:** Switches contexts (`development`, `staging`, `production`) instantly. Syncs secrets client-side via NaCl SealedBox key exchange across team workspaces. No plaintext keys touch the wire or disk.
 
-**Governance audit log:** every call logged with key name, endpoint, environment, agent identity, status, and the domain allowlist state at the exact moment of execution. No value field exists in the schema.
+**Identity & Audit Logs:** Maps every execution to cryptographically issued Agent Tokens. The log stores metadata, status, environment, and target scopes. No value field exists in the schema.
 
-**SDK:** build tools, MCP servers, and AI agents where credential values never enter your code or the code of anyone using what you build.
+**Developer SDK & MCP:** Build MCP servers, plugins, and agents where credential values are resolved below the runtime loop. The SDK has no `get()` method to prevent accidental or malicious retrieval.
 
 **MCP integration:** first-class MCP server for Claude Desktop and Cursor. No credential values in any config file.
 
