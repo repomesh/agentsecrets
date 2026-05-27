@@ -11,17 +11,16 @@
 
 ---
 
-AgentSecrets is the overarching zero-knowledge credential infrastructure for the AI era. It decouples credentials from the application runtime entirely, ensuring that agents execute tasks using credentials by reference without ever holding the raw values in memory. 
+AgentSecrets is the zero-knowledge credential infrastructure for the AI era. It decouples credentials from the application runtime entirely, ensuring that agents execute tasks using credentials by reference without ever holding the raw values in memory. 
 
 To achieve this, AgentSecrets acts as an extensible infrastructure host. Specific security guarantees are enforced by **subsystems** that plug into AgentSecrets:
 
-| Subsystem / Layer | System | What It Solves | Novel Claim |
+| Subsystem / Layer | System | What It Solves | Claim |
 |:------------------|:-------|:---------------|:------------|
 | **Credential Infrastructure** | AgentSecrets (Host) | Agent credential theft & lifecycle management | Extensible zero-knowledge infrastructure: credentials are resolved and injected at runtime without agents holding secret values |
-| **Intent Attestation Subsystem** | [SEC](https://github.com/The-17/SEC) | Agents misusing credentials they are allowed to access | Cryptographic pre-commitment to intent: binding API execution surfaces to pre-declared objectives |
 | **Capability Bounding Subsystem** | [Keychain-Auth](https://github.com/The-17/keychain-auth) | Static, long-lived, over-privileged local credentials | OS-level keychain integration with process identity validation and dynamic session bounding |
 
-Each subsystem represents a novel, independently publishable security primitive. The unified AgentSecrets infrastructure compiles these subsystems into a cohesive, provably secure framework. At no step does the agent hold, see, or have access to the actual credential value. The zero-knowledge guarantee is architectural, not policy-based.
+AgentSecrets compiles these subsystems into a cohesive, provably secure framework. At no step does the agent hold, see, or have access to the actual credential value. The zero-knowledge guarantee is architectural, not policy-based.
 
 
 ---
@@ -114,13 +113,11 @@ AgentSecrets hosts modular subsystems to provide layered defense-in-depth:
 
 **Zero-Knowledge Credential Core:** Six auth injection styles, client-side encryption (X25519, AES-256-GCM, Argon2id), response body redaction, SSRF protection, and environment variable injection (`agentsecrets env -- <cmd>`). The server stores client-encrypted ciphertext it structurally cannot decrypt.
 
-**Intent Attestation (SEC):** Enforces Signed Execution Contracts. Before the agent ingests untrusted text, the orchestrator signs a contract binding execution authority to a pre-declared natural-language objective and target URL glob patterns. The gateway verifies this deterministically, stopping prompt injections from hijacking credentials.
-
 **Capability Bounding (Keychain-Auth):** Protects OS keychain access via process verification (Anti-Impersonation). It verifies the cryptographic hash of calling processes (like the CLI or proxy) and restricts credentials to authorized execution namespaces with session capability boundaries.
 
 **Environments & Teams:** Switches contexts (`development`, `staging`, `production`) instantly. Syncs secrets client-side via NaCl SealedBox key exchange across team workspaces. No plaintext keys touch the wire or disk.
 
-**Identity & Audit Logs:** Maps every execution to cryptographically issued Agent Tokens. The log stores metadata, status, environment, and target scopes. No value field exists in the schema.
+**Identity & Audit Logs:** Maps executions to cryptographically issued Agent Tokens (when configured). The log stores metadata, status, environment, and target scopes. No value field exists in the schema.
 
 **Developer SDK & MCP:** Build MCP servers, plugins, and agents where credential values are resolved below the runtime loop. The SDK has no `get()` method to prevent accidental or malicious retrieval.
 
@@ -155,8 +152,11 @@ agentsecrets init
 
 agentsecrets project create my-agent
 
+# Set a single secret
 agentsecrets secrets set STRIPE_KEY=sk_live_51H...
-agentsecrets secrets set OPENAI_KEY=sk-proj-...
+
+# Set multiple secrets at once
+agentsecrets secrets set STRIPE_KEY=sk_live_51H... OPENAI_KEY=sk-proj-...
 
 agentsecrets workspace allowlist add api.stripe.com api.openai.com
 
@@ -172,16 +172,33 @@ This is what AgentSecrets looks like when an AI agent operates the full credenti
 
 ```bash
 agentsecrets status
-# Workspace:    Acme Engineering
-# Project:      payments-service
-# Environment:  production
-# Last pull:    2 minutes ago
+
+AgentSecrets Status
+
+  ──────────────────────────────
+  Logged in as:        alice@theseventeen.co
+  Session:             Active (expires 5 hours from now)
+  Refresh Token:       Available
+  Selected Workspace:  Acme Engineering (shared)
+  Environment:         production (from project.json)
+  Current Project:     payments-service (in Acme Engineering)
+  Proxy:               Running (port 8765)
+  Secrets:             12 synced (0 unsynced)
+  Activity:            Last Push: 2 minutes ago | Last Pull: 5 minutes ago
 
 agentsecrets secrets diff
-# OUT OF SYNC: STRIPE_KEY (remote is newer)
+# Comparing secrets & allowlist...
+# 
+# SECRETS:
+# 
+#   In Cloud but missing in Local:
+#     STRIPE_KEY
+# 
+# Run agentsecrets secrets pull to sync from cloud.
 
 agentsecrets secrets pull
-# Synced 1 secret from cloud to OS keychain
+# Pulling 1 secret and allowlist...
+# Successfully synced cloud secrets and allowlist domains.
 
 agentsecrets call \
   --url https://api.stripe.com/v1/balance \

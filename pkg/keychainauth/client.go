@@ -97,6 +97,55 @@ func Init() error {
 	scanner = sc
 	encoder = json.NewEncoder(c)
 	initialized = true
+
+	// Step 4: Perform a protocol sanity check (ping) to ensure the running
+	// daemon understands the v2.0+ REQUEST/RESPONSE protocol.
+	// We send a search request for our service namespace.
+	pingReq := request{
+		Type:    typeRequest,
+		Action:  actionSearch,
+		Service: serviceName,
+	}
+	if err := encoder.Encode(pingReq); err != nil {
+		c.Close()
+		conn = nil
+		scanner = nil
+		encoder = nil
+		initialized = false
+		return fmt.Errorf("keychainauth: protocol check failed: %w", err)
+	}
+
+	if !sc.Scan() {
+		c.Close()
+		conn = nil
+		scanner = nil
+		encoder = nil
+		initialized = false
+		if err := sc.Err(); err != nil {
+			return fmt.Errorf("keychainauth: connection lost during protocol check: %w", err)
+		}
+		return fmt.Errorf("keychainauth: connection closed by daemon during protocol check")
+	}
+
+	var resp response
+	if err := json.Unmarshal(sc.Bytes(), &resp); err != nil {
+		c.Close()
+		conn = nil
+		scanner = nil
+		encoder = nil
+		initialized = false
+		return fmt.Errorf("keychainauth: invalid response during protocol check: %w", err)
+	}
+
+	if resp.Status == "" {
+		c.Close()
+		conn = nil
+		scanner = nil
+		encoder = nil
+		initialized = false
+		return fmt.Errorf("keychainauth: protocol mismatch (outdated daemon version)")
+	}
+
 	return nil
 }
 

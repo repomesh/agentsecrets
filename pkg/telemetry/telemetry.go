@@ -273,12 +273,18 @@ func SyncIfDue(client *api.Client, cliVersion string) {
 				"os":                     dayData.OS,
 				"arch":                   dayData.Arch,
 				"active_environment":     dayData.ActiveEnvironment,
-				"user_email":             dayData.UserEmail,
-				"project_id":             dayData.ProjectID,
-				"workspace_id":           dayData.WorkspaceID,
 				"project_secret_count":   dayData.ProjectSecretCount,
 				"workspace_type":         dayData.WorkspaceType,
 				"workspace_member_count": dayData.WorkspaceMemberCount,
+			}
+			if dayData.UserEmail != "" {
+				s["user_email"] = dayData.UserEmail
+			}
+			if dayData.ProjectID != "" {
+				s["project_id"] = dayData.ProjectID
+			}
+			if dayData.WorkspaceID != "" {
+				s["workspace_id"] = dayData.WorkspaceID
 			}
 			snapshots = append(snapshots, s)
 			syncedDates = append(syncedDates, date)

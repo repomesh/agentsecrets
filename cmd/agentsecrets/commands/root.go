@@ -14,6 +14,7 @@ import (
 	"github.com/The-17/agentsecrets/pkg/ui"
 	"github.com/The-17/agentsecrets/pkg/workspaces"
 	"os"
+	"strings"
 )
 
 // Version is set at build time via ldflags
@@ -132,6 +133,7 @@ func init() {
 	rootCmd.AddCommand(environmentCmd)
 	rootCmd.AddCommand(NewEnvCmd())
 	rootCmd.AddCommand(NewExecCmd())
+	rootCmd.AddCommand(docsCmd)
 }
 
 // keychainAuthMiddleware is a PersistentPreRunE that ensures both:
@@ -168,14 +170,20 @@ func keychainAuthMiddleware(cmd *cobra.Command, args []string) error {
 
 	err := keychainauth.Init()
 	if err != nil {
-		// If the daemon is not running (e.g. stale socket file exists but connection refused),
-		// clean up the stale socket and attempt to start/setup the daemon transparently.
+		// If the daemon is not running or is outdated, clean up and attempt to start/setup the daemon transparently.
 		var notRunning *keychainauth.DaemonNotRunningError
-		if errors.As(err, &notRunning) {
+		isMismatch := strings.Contains(err.Error(), "protocol mismatch") || strings.Contains(err.Error(), "unexpected response status")
+
+		if errors.As(err, &notRunning) || isMismatch {
 			keychainauth.Close()
-			_ = os.Remove(keychainauth.SocketPath())
+			if !isMismatch {
+				_ = os.Remove(keychainauth.SocketPath())
+			}
 
 			if errSetup := ui.Spinner("Setting up keychain-auth...", func() error {
+				if isMismatch {
+					return keychainauth.RestartDaemon()
+				}
 				return keychainauth.AutoSetup()
 			}); errSetup != nil {
 				ui.Error("keychain-auth setup failed: " + errSetup.Error())
